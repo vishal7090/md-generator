@@ -1,0 +1,4 @@
+Input: C:\Task\Project\md-generator\xlsx-to-md\tmp_cli.xlsx
+Output directory: C:\Task\Project\md-generator\xlsx-to-md\tmp_out
+Sheets processed: Sheet
+Files written: 2

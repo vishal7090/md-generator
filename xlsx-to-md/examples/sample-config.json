@@ -1,0 +1,15 @@
+{
+  "include_hidden_sheets": false,
+  "max_rows_per_sheet": 1048576,
+  "sheet_names": null,
+  "split_by_sheet": false,
+  "sheet_heading_level": "##",
+  "include_toc": true,
+  "column_indices": null,
+  "column_names": null,
+  "column_alignment": [],
+  "enable_alignment_in_tables": false,
+  "expand_merged_cells": true,
+  "streaming": false,
+  "output_basename": null
+}
