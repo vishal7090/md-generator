@@ -32,7 +32,13 @@ def build_mcp_stack(*, mount_under_fastapi: bool = False) -> tuple[FastMCP, obje
     settings = ApiSettings()
 
     def _opts() -> ConvertOptions:
-        return convert_options_from_query(repo_root=settings.repo_root)
+        return convert_options_from_query(
+            repo_root=settings.repo_root,
+            use_image_to_md=settings.use_image_to_md,
+            image_to_md_engines=settings.image_to_md_engines,
+            image_to_md_strategy=settings.image_to_md_strategy,
+            image_to_md_title=settings.image_to_md_title,
+        )
 
     @mcp.tool()
     def convert_zip_to_artifact_zip(zip_path: str) -> str:

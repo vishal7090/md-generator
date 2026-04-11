@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from src.convert_impl import convert_zip
-from src.options import ConvertOptions
+from src.options import DEFAULT_IMAGE_TO_MD_ENGINES, ConvertOptions
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -17,6 +17,39 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--image-ocr", dest="image_ocr", action="store_true", help="Run tesseract on extracted images")
     p.add_argument("--no-image-ocr", dest="image_ocr", action="store_false")
     p.set_defaults(image_ocr=False)
+    p.add_argument(
+        "--use-image-to-md",
+        dest="use_image_to_md",
+        action="store_true",
+        help="Enable post-pass image-to-md OCR (default: on); see --image-to-md-engines",
+    )
+    p.add_argument(
+        "--no-use-image-to-md",
+        dest="use_image_to_md",
+        action="store_false",
+        help="Disable post-pass image-to-md over assets/files and assets/images",
+    )
+    p.set_defaults(use_image_to_md=True)
+    p.add_argument(
+        "--image-to-md-engines",
+        type=str,
+        default=DEFAULT_IMAGE_TO_MD_ENGINES,
+        metavar="LIST",
+        help=f"Comma-separated OCR engines for image-to-md: tess, paddle, easy (default: {DEFAULT_IMAGE_TO_MD_ENGINES})",
+    )
+    p.add_argument(
+        "--image-to-md-strategy",
+        choices=("best", "compare"),
+        default="best",
+        help="image-to-md --strategy (default: best)",
+    )
+    p.add_argument(
+        "--image-to-md-title",
+        type=str,
+        default="",
+        metavar="TEXT",
+        help="Top-level title passed to image-to-md (default: derived from filename)",
+    )
     p.add_argument("--pdf-ocr", action="store_true", help="Pass --ocr to pdf-to-md for nested PDFs")
     p.add_argument(
         "--max-bytes",
@@ -57,6 +90,10 @@ def _options_from_args(ns: argparse.Namespace) -> ConvertOptions:
         repo_root=str(ns.repo_root.resolve()) if ns.repo_root is not None else None,
         expand_nested_zips=not ns.no_expand_nested_zips,
         max_nested_zip_depth=max(1, int(ns.max_nested_zip_depth)),
+        use_image_to_md=ns.use_image_to_md,
+        image_to_md_engines=str(ns.image_to_md_engines).strip() or DEFAULT_IMAGE_TO_MD_ENGINES,
+        image_to_md_strategy=str(ns.image_to_md_strategy),
+        image_to_md_title=str(ns.image_to_md_title or "").strip(),
     )
 
 

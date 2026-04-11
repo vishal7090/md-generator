@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Default OCR stack for the image-to-md post-pass (order matters for "best" tie-break).
+DEFAULT_IMAGE_TO_MD_ENGINES = "paddle,easy,tess"
+
 
 @dataclass
 class ConvertOptions:
@@ -16,3 +19,8 @@ class ConvertOptions:
     repo_root: str | None = None  # override MD_GENERATOR_ROOT / auto-detect
     expand_nested_zips: bool = True
     max_nested_zip_depth: int = 16
+    # Post-pass: run sibling image-to-md on all rasters under assets/files + assets/images.
+    use_image_to_md: bool = True
+    image_to_md_engines: str = DEFAULT_IMAGE_TO_MD_ENGINES
+    image_to_md_strategy: str = "best"  # best | compare
+    image_to_md_title: str = ""

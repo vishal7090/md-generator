@@ -13,6 +13,7 @@ from api.jobs import JobStore
 from api.mcp_setup import build_mcp_stack
 from api.query_options import convert_options_from_query
 from api.settings import ApiSettings, cors_list
+from src.options import DEFAULT_IMAGE_TO_MD_ENGINES
 
 _mcp, _mcp_http = build_mcp_stack(mount_under_fastapi=True)
 
@@ -76,6 +77,10 @@ async def convert_sync(
     expand_nested_zips: bool = True,
     max_nested_zip_depth: int = 16,
     repo_root: str | None = None,
+    use_image_to_md: bool = True,
+    image_to_md_engines: str = DEFAULT_IMAGE_TO_MD_ENGINES,
+    image_to_md_strategy: str = "best",
+    image_to_md_title: str = "",
 ) -> Response:
     settings: ApiSettings = request.app.state.settings
     if not file.filename or not file.filename.lower().endswith(".zip"):
@@ -97,6 +102,10 @@ async def convert_sync(
         expand_nested_zips=expand_nested_zips,
         max_nested_zip_depth=max_nested_zip_depth,
         repo_root=rr,
+        use_image_to_md=use_image_to_md,
+        image_to_md_engines=image_to_md_engines,
+        image_to_md_strategy=image_to_md_strategy,
+        image_to_md_title=image_to_md_title,
     )
     import tempfile
 
@@ -125,6 +134,10 @@ async def convert_jobs(
     expand_nested_zips: bool = True,
     max_nested_zip_depth: int = 16,
     repo_root: str | None = None,
+    use_image_to_md: bool = True,
+    image_to_md_engines: str = DEFAULT_IMAGE_TO_MD_ENGINES,
+    image_to_md_strategy: str = "best",
+    image_to_md_title: str = "",
 ) -> dict:
     settings: ApiSettings = request.app.state.settings
     store: JobStore = request.app.state.job_store
@@ -141,6 +154,10 @@ async def convert_jobs(
         expand_nested_zips=expand_nested_zips,
         max_nested_zip_depth=max_nested_zip_depth,
         repo_root=rr,
+        use_image_to_md=use_image_to_md,
+        image_to_md_engines=image_to_md_engines,
+        image_to_md_strategy=image_to_md_strategy,
+        image_to_md_title=image_to_md_title,
     )
     job = store.create_job()
     inp = job.workspace / "upload.zip"

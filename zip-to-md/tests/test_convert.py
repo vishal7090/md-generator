@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import zipfile
 from pathlib import Path
@@ -39,7 +40,7 @@ def test_convert_zip_artifact_skips_junk_and_indexes(tmp_path: Path) -> None:
     convert_zip(
         zpath,
         out,
-        ConvertOptions(enable_office=False),
+        ConvertOptions(enable_office=False, use_image_to_md=False),
     )
 
     doc = out / "document.md"
@@ -82,7 +83,7 @@ def test_nested_zip_recursive_expansion(tmp_path: Path) -> None:
     zpath.write_bytes(outer.getvalue())
 
     out = tmp_path / "nested_out"
-    convert_zip(zpath, out, ConvertOptions(enable_office=False))
+    convert_zip(zpath, out, ConvertOptions(enable_office=False, use_image_to_md=False))
 
     deep = out / "assets" / "files" / "nested" / "inner_unzipped" / "deep" / "note.txt"
     assert deep.is_file()
@@ -104,7 +105,11 @@ def test_nested_zip_disabled(tmp_path: Path) -> None:
     zpath = tmp_path / "one.zip"
     zpath.write_bytes(outer.getvalue())
     out = tmp_path / "no_expand"
-    convert_zip(zpath, out, ConvertOptions(enable_office=False, expand_nested_zips=False))
+    convert_zip(
+        zpath,
+        out,
+        ConvertOptions(enable_office=False, expand_nested_zips=False, use_image_to_md=False),
+    )
     assert not (out / "assets" / "files" / "x_unzipped").exists()
     doc = (out / "document.md").read_text(encoding="utf-8")
     assert "recursive expansion is disabled" in doc.lower()
@@ -117,9 +122,44 @@ def test_max_bytes_truncates(tmp_path: Path) -> None:
     zpath = tmp_path / "big.zip"
     zpath.write_bytes(buf.getvalue())
     out = tmp_path / "out2"
-    convert_zip(zpath, out, ConvertOptions(enable_office=False, max_bytes=100))
+    convert_zip(
+        zpath,
+        out,
+        ConvertOptions(enable_office=False, max_bytes=100, use_image_to_md=False),
+    )
     text = (out / "document.md").read_text(encoding="utf-8")
     assert "Truncated" in text
+
+
+@pytest.mark.integration
+def test_use_image_to_md_tesseract_on_png(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    if not (repo / "image-to-md" / "converter.py").is_file():
+        pytest.skip("image-to-md not in monorepo")
+    # 1x1 PNG that decodes reliably across Pillow versions (strict zlib rejects some tiny fixtures).
+    png_minimal = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("pic.png", png_minimal)
+    zpath = tmp_path / "img.zip"
+    zpath.write_bytes(buf.getvalue())
+    out = tmp_path / "img_out"
+    convert_zip(
+        zpath,
+        out,
+        ConvertOptions(
+            enable_office=False,
+            use_image_to_md=True,
+            image_to_md_engines="tess",
+            image_to_md_strategy="best",
+            repo_root=str(repo),
+        ),
+    )
+    text = (out / "document.md").read_text(encoding="utf-8")
+    assert "Post-pass: image-to-md" in text
+    assert "pic.png" in text or "00000_" in text
 
 
 @pytest.mark.integration
@@ -133,5 +173,14 @@ def test_office_subprocess_when_siblings_present(tmp_path: Path) -> None:
     zpath = tmp_path / "only_txt.zip"
     zpath.write_bytes(buf.getvalue())
     out = tmp_path / "off"
-    convert_zip(zpath, out, ConvertOptions(enable_office=True, repo_root=str(repo), verbose=False))
+    convert_zip(
+        zpath,
+        out,
+        ConvertOptions(
+            enable_office=True,
+            repo_root=str(repo),
+            verbose=False,
+            use_image_to_md=False,
+        ),
+    )
     assert "ok" in (out / "document.md").read_text(encoding="utf-8")

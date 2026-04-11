@@ -12,9 +12,11 @@ import zipfile
 from io import StringIO
 from pathlib import Path
 
-from src.options import ConvertOptions
+from src.options import DEFAULT_IMAGE_TO_MD_ENGINES, ConvertOptions
 
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"})
+# Subset supported by sibling image-to-md (see image-to-md/src/io_util.py).
+IMAGE_TO_MD_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp"})
 JUNK_NAMES = frozenset({".ds_store", "thumbs.db"})
 
 _CODE_LANG = {
@@ -479,6 +481,113 @@ def _image_ocr_note(path: Path, options: ConvertOptions) -> str:
     return ""
 
 
+def _collect_unique_raster_paths(files_root: Path, images_dir: Path) -> list[Path]:
+    """
+    All supported raster files under extracted files and merged images.
+    Dedupes by resolved path, then by file digest so the same pixel file (e.g. under
+    assets/files and assets/images) is only OCR'd once — avoids PIL edge cases.
+    """
+    seen: set[str] = set()
+    candidates: list[Path] = []
+    for root in (files_root, images_dir):
+        if not root.is_dir():
+            continue
+        for p in sorted(root.rglob("*"), key=lambda x: str(x).lower()):
+            if not p.is_file():
+                continue
+            if p.suffix.lower() not in IMAGE_TO_MD_EXTENSIONS:
+                continue
+            key = str(p.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(p)
+
+    by_digest: dict[str, Path] = {}
+    for p in candidates:
+        try:
+            digest = hashlib.sha256(p.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        if digest not in by_digest:
+            by_digest[digest] = p
+    return sorted(by_digest.values(), key=lambda x: str(x).lower())
+
+
+def _postpass_image_to_markdown(
+    files_root: Path,
+    images_dir: Path,
+    repo: Path,
+    options: ConvertOptions,
+) -> str:
+    """
+    One image-to-md run on a flat temp copy of every raster under assets/files and assets/images
+    (includes merged office/PDF images).
+    """
+    if not options.use_image_to_md:
+        return ""
+
+    paths = _collect_unique_raster_paths(files_root, images_dir)
+    if not paths:
+        return ""
+
+    tool = repo / "image-to-md"
+    conv = tool / "converter.py"
+    if not conv.is_file():
+        return "\n\n*(Post-pass image-to-md skipped: image-to-md not found under repo root.)*\n"
+
+    engines = (
+        ",".join(p.strip().lower() for p in options.image_to_md_engines.split(",") if p.strip())
+        or DEFAULT_IMAGE_TO_MD_ENGINES
+    )
+    strategy = options.image_to_md_strategy if options.image_to_md_strategy in ("best", "compare") else "best"
+    title = (options.image_to_md_title or "OCR - raster images (extracted and merged)").strip()[:240]
+
+    import tempfile
+    import uuid
+
+    out_md = Path(tempfile.gettempdir()) / f"zip-to-md-ocr-{uuid.uuid4().hex}.md"
+    out_md.unlink(missing_ok=True)
+    try:
+        with tempfile.TemporaryDirectory() as td_root:
+            flat = (Path(td_root) / "flat").resolve()
+            flat.mkdir(parents=True, exist_ok=True)
+            for i, src in enumerate(paths):
+                suf = src.suffix.lower() or ".img"
+                tag = hashlib.sha256(str(src.resolve()).encode()).hexdigest()[:12]
+                # Avoid embedding ".png" in the stem (e.g. pic.png_hash.png); PIL can fail on such names.
+                name = f"{i:05d}_{tag}{suf}"
+                shutil.copy2(src.resolve(), flat / name)
+            argv = [
+                sys.executable,
+                str(conv),
+                str(flat),
+                str(out_md.resolve()),
+                "--engines",
+                engines,
+                "--strategy",
+                strategy,
+                "--title",
+                title,
+            ]
+            if options.verbose:
+                argv.append("-v")
+            code, combined, err = _run_tool(tool, argv, verbose=options.verbose)
+            if code != 0:
+                hint = (err or combined or "").strip()[:600]
+                suf = f" {hint}" if hint else ""
+                return f"\n\n*(Post-pass image-to-md exited with code {code}.{suf})*\n"
+            if not out_md.is_file():
+                return "\n\n*(Post-pass image-to-md produced no output file.)*\n"
+            body = out_md.read_text(encoding="utf-8", errors="replace").strip()
+            if not body:
+                return "\n\n*(Post-pass image-to-md returned empty document.)*\n"
+            block = _trim_text(body + "\n", options.max_bytes + 500_000)
+            return f"\n\n## Post-pass: image-to-md (all rasters)\n\n{block}"
+    finally:
+        out_md.unlink(missing_ok=True)
+
+
 def _handle_image(
     data: bytes,
     rel_posix: str,
@@ -492,7 +601,8 @@ def _handle_image(
     dest.write_bytes(data)
     rel_link = dest.relative_to(doc_md.parent.resolve()).as_posix()
     line = f"![{Path(rel_posix).name}]({rel_link})\n"
-    line += _image_ocr_note(dest, options)
+    if options.image_ocr:
+        line += _image_ocr_note(dest, options)
     return line
 
 
@@ -649,5 +759,11 @@ def convert_zip(
                 lines.append("\n")
         except Exception as e:
             lines.append(f"*Content could not be parsed: {e}*\n\n")
+
+    appendix = _postpass_image_to_markdown(files_root, images_dir, repo, options)
+    if appendix:
+        lines.append(appendix)
+        if not appendix.endswith("\n"):
+            lines.append("\n")
 
     doc_md.write_text("".join(lines), encoding="utf-8")

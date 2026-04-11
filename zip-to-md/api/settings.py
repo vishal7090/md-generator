@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.options import DEFAULT_IMAGE_TO_MD_ENGINES
+
 
 class ApiSettings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -17,6 +19,10 @@ class ApiSettings(BaseSettings):
     cors_origins: str = "*"
     """Parent directory of word-to-md, pdf-to-md, etc. (subprocess converters)."""
     repo_root: str | None = None
+    use_image_to_md: bool = True
+    image_to_md_engines: str = DEFAULT_IMAGE_TO_MD_ENGINES
+    image_to_md_strategy: str = "best"
+    image_to_md_title: str = ""
 
 
 def cors_list(settings: ApiSettings) -> list[str]:
