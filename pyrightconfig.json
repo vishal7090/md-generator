@@ -1,0 +1,13 @@
+{
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "executionEnvironments": [
+    { "root": "zip-to-md" },
+    { "root": "image-to-md" },
+    { "root": "txt-json-xml-to-md" },
+    { "root": "word-to-md" },
+    { "root": "pdf-to-md" },
+    { "root": "ppt-to-md" },
+    { "root": "xlsx-to-md" }
+  ]
+}
