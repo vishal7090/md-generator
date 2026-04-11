@@ -1,4 +1,4 @@
-from src.md_emit import escape_cell, table_to_markdown
+from md_generator.pdf.md_emit import escape_cell, table_to_markdown
 
 
 def test_escape_cell_pipe():

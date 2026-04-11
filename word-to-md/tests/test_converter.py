@@ -8,8 +8,8 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from src.converter import convert_docx_to_markdown
-from src.artifact import ARTIFACT_LOG_NAME, ARTIFACT_MD_NAME
+from md_generator.word.converter import convert_docx_to_markdown
+from md_generator.word.artifact import ARTIFACT_LOG_NAME, ARTIFACT_MD_NAME
 
 
 def test_convert_minimal_docx(sample_docx: Path, tmp_path: Path) -> None:

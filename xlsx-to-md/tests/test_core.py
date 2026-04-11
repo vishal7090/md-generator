@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from src.convert_config import ConvertConfig
-from src.converter_core import convert_excel_to_markdown
+from md_generator.xlsx.convert_config import ConvertConfig
+from md_generator.xlsx.converter_core import convert_excel_to_markdown
 
 
 def _write_minimal_wb(path: Path, hidden_second: bool = False, merged: bool = False) -> None:

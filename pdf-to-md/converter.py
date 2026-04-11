@@ -1,6 +1,8 @@
-"""CLI entry: python converter.py input.pdf output.md"""
+"""Shim CLI: prefer `md-pdf` or `python -m md_generator.pdf.converter` after `pip install -e .`"""
 
-from src.converter import main
+from __future__ import annotations
+
+from md_generator.pdf.converter import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

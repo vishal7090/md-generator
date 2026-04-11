@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+import asyncio
 
-_ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+import pytest
 
-pytest = __import__("pytest")
 fastmcp = pytest.importorskip("fastmcp")
 
 
 def test_mcp_server_defines_tools() -> None:
-    import asyncio
-
-    from api import mcp_server
+    from md_generator.word.api import mcp_server
 
     async def _names() -> set[str]:
         tools = await mcp_server.mcp.get_tools()

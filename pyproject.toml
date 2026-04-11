@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "md-generator"
+version = "0.1.0"
+description = "Convert PDF, Office, images, text/JSON/XML, and ZIP archives to Markdown."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary. All rights reserved. No license granted." }
+authors = [{ name = "md-generator contributors" }]
+keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip"]
+classifiers = [
+  "License :: Other/Proprietary License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Text Processing :: Markup :: Markdown",
+]
+
+dependencies = []
+
+[project.optional-dependencies]
+pdf = ["pymupdf>=1.24.0", "pdfplumber>=0.11.0"]
+word = ["mammoth>=1.8.0", "markdownify>=0.13.0"]
+ppt = [
+  "python-pptx>=1.0.0",
+  "Pillow>=10.0.0",
+  "lxml>=5.0.0",
+  "olefile>=0.47",
+  "openpyxl>=3.1.0",
+  "mammoth>=1.8.0",
+  "markdownify>=0.14.0",
+  "pymupdf>=1.24.0",
+  "pdfplumber>=0.11.0",
+  "pytesseract>=0.3.10",
+]
+xlsx = ["openpyxl>=3.1.0"]
+image = ["Pillow>=10.0.0"]
+image-ocr = [
+  "Pillow>=10.0.0",
+  "pytesseract>=0.3.10",
+  "numpy>=1.24.0",
+  "paddlepaddle>=2.5.0",
+  "paddleocr>=2.7.0.3",
+  "easyocr>=1.7.0",
+]
+text = []
+archive = ["Pillow>=10.0.0", "pytesseract>=0.3.10"]
+api = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "python-multipart>=0.0.12",
+  "httpx>=0.27.0",
+  "pydantic-settings>=2.0.0",
+]
+mcp = ["mcp>=1.2.0", "fastmcp>=2.3.0"]
+dev = ["pytest>=8.0.0", "httpx>=0.27.0", "md-generator[api]", "md-generator[mcp]"]
+all = [
+  "pymupdf>=1.24.0",
+  "pdfplumber>=0.11.0",
+  "mammoth>=1.8.0",
+  "markdownify>=0.14.0",
+  "python-pptx>=1.0.0",
+  "Pillow>=10.0.0",
+  "lxml>=5.0.0",
+  "olefile>=0.47",
+  "openpyxl>=3.1.0",
+  "pytesseract>=0.3.10",
+  "numpy>=1.24.0",
+  "paddlepaddle>=2.5.0",
+  "paddleocr>=2.7.0.3",
+  "easyocr>=1.7.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "python-multipart>=0.0.12",
+  "httpx>=0.27.0",
+  "pydantic-settings>=2.0.0",
+  "mcp>=1.2.0",
+  "fastmcp>=2.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/vishal7090/md-generator"
+Repository = "https://github.com/vishal7090/md-generator"
+Issues = "https://github.com/vishal7090/md-generator/issues"
+
+[project.scripts]
+md-pdf = "md_generator.pdf.converter:main"
+md-word = "md_generator.word.converter:main"
+md-ppt = "md_generator.ppt.converter:main"
+md-xlsx = "md_generator.xlsx.converter:main"
+md-image = "md_generator.image.converter:main"
+md-text = "md_generator.text.converter:main"
+md-zip = "md_generator.archive.converter:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = [
+  "pdf-to-md/tests",
+  "word-to-md/tests",
+  "ppt-to-md/tests",
+  "xlsx-to-md/tests",
+  "image-to-md/tests",
+  "txt-json-xml-to-md/tests",
+  "zip-to-md/tests",
+]
+markers = ["integration: optional dependency or slower checks"]

@@ -4,15 +4,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
-
-_ROOT = Path(__file__).resolve().parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 
 def _run_cli(remainder: list[str]) -> int:
-    from src.converter import main
+    from md_generator.word.converter import main
 
     if remainder and remainder[0] == "--":
         remainder = remainder[1:]
@@ -20,16 +15,13 @@ def _run_cli(remainder: list[str]) -> int:
 
 
 def _run_api(host: str, port: int) -> None:
-    import os
-
     import uvicorn
 
-    os.chdir(_ROOT)
-    uvicorn.run("api.main:app", host=host, port=port, factory=False)
+    uvicorn.run("md_generator.word.api.main:app", host=host, port=port, factory=False)
 
 
 def _run_mcp(transport: str, host: str, port: int) -> None:
-    from api.mcp_server import mcp
+    from md_generator.word.api.mcp_server import mcp
 
     kwargs: dict = {}
     if transport in ("http", "sse", "streamable-http"):

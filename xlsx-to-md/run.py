@@ -31,7 +31,7 @@ def main() -> None:
     ns = p.parse_args()
 
     if ns.command == "cli":
-        from src.converter import main as cli_main
+        from md_generator.xlsx.converter import main as cli_main
 
         sys.exit(cli_main(_strip_leading_ddash(list(ns.cli_args))))
 
@@ -39,17 +39,17 @@ def main() -> None:
         try:
             import uvicorn
         except ImportError as e:
-            print("Install API deps: pip install -r requirements-api.txt", file=sys.stderr)
+            print("Install API deps: pip install md-generator[xlsx,api]", file=sys.stderr)
             raise SystemExit(1) from e
-        from src.api.app import app as api_app
+        from md_generator.xlsx.api.app import app as api_app
 
         uvicorn.run(api_app, host=ns.host, port=ns.port)
 
     elif ns.command == "mcp":
         try:
-            from src.mcp_server import build_mcp_server
+            from md_generator.xlsx.mcp_server import build_mcp_server
         except ImportError as e:
-            print("Install MCP deps: pip install -r requirements-mcp.txt", file=sys.stderr)
+            print("Install MCP deps: pip install md-generator[mcp]", file=sys.stderr)
             raise SystemExit(1) from e
         mcp = build_mcp_server()
         mcp.run(transport=ns.transport)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -13,9 +14,12 @@ _FIXTURE = Path(__file__).resolve().parent / "fixtures" / "minimal.pdf"
 def _ensure_minimal_pdf() -> None:
     if _FIXTURE.is_file():
         return
-    from tests.build_fixture import build_minimal_pdf
-
-    build_minimal_pdf(_FIXTURE)
+    mod_path = Path(__file__).resolve().parent / "build_fixture.py"
+    spec = importlib.util.spec_from_file_location("_pdf_build_fixture", mod_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.build_minimal_pdf(_FIXTURE)
     assert _FIXTURE.is_file(), f"failed to create {_FIXTURE}"
 
 

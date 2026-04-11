@@ -1,6 +1,6 @@
 # xlsx-to-md
 
-Convert Excel workbooks (`.xlsx`, `.xlsm`) to GitHub-flavored Markdown: one combined file or one file per worksheet, optional JSON configuration, merged-cell expansion, hidden-sheet filtering, and column selection.
+Convert Excel workbooks (`.xlsx`, `.xlsm`) or comma-separated **`.csv`** files to GitHub-flavored Markdown: one combined file or one file per worksheet (CSV is treated as a single sheet named from the file stem), optional JSON configuration, merged-cell expansion, hidden-sheet filtering, and column selection.
 
 ## Setup
 
@@ -68,7 +68,7 @@ python run.py api --host 127.0.0.1 --port 8003
 ```
 
 - **Swagger UI:** http://127.0.0.1:8003/docs  
-- **Sync ZIP:** `POST /convert/sync` — multipart field `file` (filename must end with `.xlsx` or `.xlsm`).  
+- **Sync ZIP:** `POST /convert/sync` — multipart field `file` (filename must end with `.xlsx`, `.xlsm`, or `.csv`).  
 - **Async job:** `POST /convert/jobs` → `GET /convert/jobs/{id}` → `GET /convert/jobs/{id}/download` when `status` is `done`.  
 - **Query params** (same semantics as CLI): `split`, `include_hidden_sheets`, `include_toc`, `streaming`, `expand_merged_cells`, `max_rows_per_sheet`, `sheet` (repeat per tab name; case-insensitive; omit = all sheets).
 

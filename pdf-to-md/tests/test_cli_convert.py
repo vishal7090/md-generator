@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _pdf_cli_env() -> dict[str, str]:
+    env = os.environ.copy()
+    prev = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(_REPO_ROOT / "src") + (os.pathsep + prev if prev else "")
+    return env
 
 
 def test_cli_classic(tmp_path: Path, minimal_pdf_path: Path) -> None:
@@ -13,6 +23,7 @@ def test_cli_classic(tmp_path: Path, minimal_pdf_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
+        env=_pdf_cli_env(),
     )
     assert r.returncode == 0, r.stderr
     text = out_md.read_text(encoding="utf-8")
@@ -38,6 +49,7 @@ def test_cli_artifact_layout(tmp_path: Path, minimal_pdf_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
+        env=_pdf_cli_env(),
     )
     assert r.returncode == 0, r.stderr
     doc = bundle / "document.md"

@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 from PIL import Image
 
-_ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
-from src.convert_impl import ConvertOptions, convert_images_recursive
-from src.io_util import iter_image_paths_recursive
+from md_generator.image.convert_impl import ConvertOptions, convert_images_recursive
+from md_generator.image.io_util import iter_image_paths_recursive
 
 
 def test_iter_image_paths_recursive_finds_nested(tmp_path: Path) -> None:
@@ -34,7 +27,7 @@ def test_convert_images_recursive_nested_dir(monkeypatch: pytest.MonkeyPatch, tm
         def extract(self, image):
             return "ok"
 
-    monkeypatch.setattr("src.convert_impl.build_backends", lambda _o: [_B()])
+    monkeypatch.setattr("md_generator.image.convert_impl.build_backends", lambda _o: [_B()])
     out = tmp_path / "out.md"
     convert_images_recursive(
         tmp_path,

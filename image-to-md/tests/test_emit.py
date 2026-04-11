@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.emit import markdown_best, markdown_compare, normalize_whitespace, pick_best_text
+from md_generator.image.emit import markdown_best, markdown_compare, normalize_whitespace, pick_best_text
 
 
 def test_normalize_whitespace_collapses_long_blank_runs() -> None:
