@@ -1,0 +1,2 @@
+# Core: image I/O. OCR engines are optional; see requirements-ocr.txt.
+Pillow>=10.0.0

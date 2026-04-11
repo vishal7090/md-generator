@@ -1,0 +1,17 @@
+# Optional OCR backends (large downloads / native deps).
+# Install after requirements.txt, e.g. pip install -r requirements.txt -r requirements-ocr.txt
+#
+# Tesseract: pytesseract is a wrapper; you still need the Tesseract OCR binary on PATH, or set
+# TESSERACT_CMD / TESSERACT_PATH, or pass --tesseract-cmd to the CLI.
+# https://github.com/tesseract-ocr/tesseract
+#
+# PaddlePaddle: pick the wheel for your OS/Python from the official install guide if pip fails.
+# https://www.paddlepaddle.org.cn/install/quick
+#
+# PaddleOCR / EasyOCR may download model weights on first use.
+
+pytesseract>=0.3.10
+numpy>=1.24.0
+paddlepaddle>=2.5.0
+paddleocr>=2.7.0.3
+easyocr>=1.7.0
