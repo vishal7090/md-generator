@@ -75,18 +75,140 @@ def _should_skip_zip_member(name: str) -> bool:
     return False
 
 
-def _safe_extract_path(files_root: Path, member_name: str) -> Path | None:
+def _safe_member_path(extract_root: Path, member_name: str, jail_root: Path) -> Path | None:
+    """Resolve member path under extract_root; must stay under jail_root (zip-slip safe)."""
     rel = member_name.replace("\\", "/").strip("/")
     if not rel or rel.endswith("/"):
         return None
     if rel.startswith("/") or ".." in Path(rel).parts:
         return None
-    dest = (files_root / rel).resolve()
+    dest = (extract_root / rel).resolve()
     try:
-        dest.relative_to(files_root.resolve())
+        dest.relative_to(jail_root.resolve())
     except ValueError:
         return None
     return dest
+
+
+def _safe_extract_path(files_root: Path, member_name: str) -> Path | None:
+    return _safe_member_path(files_root, member_name, files_root)
+
+
+def _nested_zip_depth(zip_path: Path, files_root: Path) -> int:
+    """How many *_unzipped/ segments appear in the path (nesting level of prior expansions)."""
+    try:
+        rel = zip_path.resolve().relative_to(files_root.resolve())
+    except ValueError:
+        return 999
+    return sum(1 for part in rel.parts if part.endswith("_unzipped"))
+
+
+def _allocate_unzip_dir(zip_path: Path) -> Path:
+    parent = zip_path.parent
+    stem = zip_path.stem
+    base = parent / f"{stem}_unzipped"
+    if not base.exists():
+        return base
+    if base.is_dir():
+        n = 2
+        while n <= 10_000:
+            cand = parent / f"{stem}_unzipped_{n}"
+            if not cand.exists():
+                return cand
+            n += 1
+    tag = hashlib.sha256(str(zip_path.resolve()).encode()).hexdigest()[:10]
+    return parent / f"{stem}_unzipped_{tag}"
+
+
+def _extract_zip_members_to_dir(
+    archive: Path,
+    extract_root: Path,
+    jail_root: Path,
+    *,
+    verbose: bool,
+) -> bool:
+    """Extract all members of archive under extract_root (paths confined to jail_root). Returns False on failure."""
+    try:
+        with zipfile.ZipFile(archive, "r") as zf:
+            for name in zf.namelist():
+                norm = name.replace("\\", "/")
+                if _should_skip_zip_member(norm):
+                    continue
+                dest = _safe_member_path(extract_root, norm, jail_root)
+                if dest is None:
+                    if verbose:
+                        print(f"[zip-to-md] skip unsafe path in {archive.name}: {norm!r}", file=sys.stderr, flush=True)
+                    continue
+                if norm.endswith("/"):
+                    dest.mkdir(parents=True, exist_ok=True)
+                    continue
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(name) as src, open(dest, "wb") as out:
+                    shutil.copyfileobj(src, out)
+    except (zipfile.BadZipFile, OSError) as e:
+        if verbose:
+            print(f"[zip-to-md] bad zip {archive}: {e}", file=sys.stderr, flush=True)
+        return False
+    return True
+
+
+def _expand_nested_zips(files_root: Path, options: ConvertOptions) -> None:
+    if not options.expand_nested_zips:
+        return
+    jail = files_root.resolve()
+    max_depth = options.max_nested_zip_depth
+    processed: set[str] = set()
+
+    while True:
+        wave: list[Path] = []
+        for zip_path in sorted(files_root.rglob("*.zip")):
+            if not zip_path.is_file():
+                continue
+            key = str(zip_path.resolve())
+            if key in processed:
+                continue
+            if not zipfile.is_zipfile(zip_path):
+                processed.add(key)
+                continue
+            depth = _nested_zip_depth(zip_path, files_root)
+            if depth >= max_depth:
+                processed.add(key)
+                if options.verbose:
+                    print(
+                        f"[zip-to-md] skip nested zip (max depth {max_depth}): {zip_path.relative_to(files_root)}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                continue
+            wave.append(zip_path)
+
+        if not wave:
+            break
+
+        for zip_path in wave:
+            key = str(zip_path.resolve())
+            processed.add(key)
+            dest_dir = _allocate_unzip_dir(zip_path)
+            if options.verbose:
+                print(
+                    f"[zip-to-md] expand {zip_path.relative_to(files_root)} -> {dest_dir.relative_to(files_root)}/",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            ok = _extract_zip_members_to_dir(zip_path, dest_dir, jail, verbose=options.verbose)
+            if not ok and dest_dir.exists() and not any(dest_dir.iterdir()):
+                try:
+                    dest_dir.rmdir()
+                except OSError:
+                    pass
+
+
+def _all_file_paths_under(files_root: Path) -> list[str]:
+    paths: list[str] = []
+    for p in sorted(files_root.rglob("*")):
+        if p.is_file():
+            paths.append(p.relative_to(files_root).as_posix())
+    return paths
 
 
 def _csv_to_gfm(data: bytes, encoding: str = "utf-8") -> str:
@@ -385,7 +507,6 @@ def _trim_text(s: str, max_bytes: int) -> str:
 def _handle_file_content(
     rel_posix: str,
     abs_path: Path,
-    files_root: Path,
     images_dir: Path,
     doc_md: Path,
     repo: Path,
@@ -396,6 +517,20 @@ def _handle_file_content(
 
     if suf in IMAGE_SUFFIXES:
         return _handle_image(abs_path.read_bytes(), rel_posix, images_dir, doc_md, options)
+
+    if suf == ".zip":
+        parent = str(Path(rel_posix).parent.as_posix())
+        stem = abs_path.stem
+        if parent in (".", ""):
+            hint = f"`{stem}_unzipped/` (under `assets/files/`)"
+        else:
+            hint = f"`{parent}/{stem}_unzipped/` (or `..._unzipped_N/` if that name was taken)"
+        if options.expand_nested_zips:
+            return (
+                f"*Nested ZIP archive. With recursive expansion enabled, members are extracted next to "
+                f"this file, typically under {hint}.*\n"
+            )
+        return f"*Nested ZIP (`{rel_posix}`); recursive expansion is disabled (`--no-expand-nested-zips`).*\n"
 
     if suf == ".txt":
         t = abs_path.read_text(encoding="utf-8", errors="replace")
@@ -476,7 +611,6 @@ def convert_zip(
     doc_md = out_dir / "document.md"
     repo = _resolve_repo_root(options)
 
-    index_paths: list[str] = []
     with zipfile.ZipFile(input_path, "r") as zf:
         for name in zf.namelist():
             norm = name.replace("\\", "/")
@@ -491,10 +625,9 @@ def convert_zip(
             dest.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(name) as src, open(dest, "wb") as out:
                 shutil.copyfileobj(src, out)
-            rel = dest.relative_to(files_root).as_posix()
-            index_paths.append(rel)
 
-    index_paths = sorted(set(index_paths))
+    _expand_nested_zips(files_root, options)
+    index_paths = _all_file_paths_under(files_root)
 
     lines: list[str] = [
         "# ZIP Content Documentation\n",
@@ -510,7 +643,7 @@ def convert_zip(
             continue
         lines.append(f"### /{rel}\n\n")
         try:
-            block = _handle_file_content(rel, abs_path, files_root, images_dir, doc_md, repo, options)
+            block = _handle_file_content(rel, abs_path, images_dir, doc_md, repo, options)
             lines.append(block)
             if not block.endswith("\n"):
                 lines.append("\n")

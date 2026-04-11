@@ -14,3 +14,5 @@ class ConvertOptions:
     pdf_ocr: bool = False
     max_bytes: int = 512_000
     repo_root: str | None = None  # override MD_GENERATOR_ROOT / auto-detect
+    expand_nested_zips: bool = True
+    max_nested_zip_depth: int = 16

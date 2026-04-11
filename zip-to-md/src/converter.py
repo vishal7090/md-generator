@@ -31,6 +31,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Parent directory containing word-to-md, pdf-to-md, etc. (default: parent of zip-to-md or MD_GENERATOR_ROOT)",
     )
+    p.add_argument(
+        "--no-expand-nested-zips",
+        action="store_true",
+        help="Do not recursively extract .zip members under assets/files/",
+    )
+    p.add_argument(
+        "--max-nested-zip-depth",
+        type=int,
+        default=16,
+        metavar="N",
+        help="Max nesting depth for inner ZIPs (each *_unzipped/ segment counts as one level; default: 16)",
+    )
     return p
 
 
@@ -43,6 +55,8 @@ def _options_from_args(ns: argparse.Namespace) -> ConvertOptions:
         pdf_ocr=ns.pdf_ocr,
         max_bytes=ns.max_bytes,
         repo_root=str(ns.repo_root.resolve()) if ns.repo_root is not None else None,
+        expand_nested_zips=not ns.no_expand_nested_zips,
+        max_nested_zip_depth=max(1, int(ns.max_nested_zip_depth)),
     )
 
 

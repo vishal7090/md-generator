@@ -68,6 +68,48 @@ def test_convert_zip_artifact_skips_junk_and_indexes(tmp_path: Path) -> None:
     assert "assets/images/" in text.replace("\\", "/")
 
 
+def test_nested_zip_recursive_expansion(tmp_path: Path) -> None:
+    inner = io.BytesIO()
+    with zipfile.ZipFile(inner, "w") as z:
+        z.writestr("deep/note.txt", "deep hello\n")
+    inner_bytes = inner.getvalue()
+
+    outer = io.BytesIO()
+    with zipfile.ZipFile(outer, "w") as z:
+        z.writestr("nested/inner.zip", inner_bytes)
+        z.writestr("top.txt", "top level\n")
+    zpath = tmp_path / "nested.zip"
+    zpath.write_bytes(outer.getvalue())
+
+    out = tmp_path / "nested_out"
+    convert_zip(zpath, out, ConvertOptions(enable_office=False))
+
+    deep = out / "assets" / "files" / "nested" / "inner_unzipped" / "deep" / "note.txt"
+    assert deep.is_file()
+    assert deep.read_text(encoding="utf-8") == "deep hello\n"
+
+    text = (out / "document.md").read_text(encoding="utf-8")
+    assert "nested/inner_unzipped/deep/note.txt" in text
+    assert "deep hello" in text
+    assert "Nested ZIP archive" in text or "inner.zip" in text
+
+
+def test_nested_zip_disabled(tmp_path: Path) -> None:
+    inner = io.BytesIO()
+    with zipfile.ZipFile(inner, "w") as z:
+        z.writestr("a.txt", "inside\n")
+    outer = io.BytesIO()
+    with zipfile.ZipFile(outer, "w") as z:
+        z.writestr("x.zip", inner.getvalue())
+    zpath = tmp_path / "one.zip"
+    zpath.write_bytes(outer.getvalue())
+    out = tmp_path / "no_expand"
+    convert_zip(zpath, out, ConvertOptions(enable_office=False, expand_nested_zips=False))
+    assert not (out / "assets" / "files" / "x_unzipped").exists()
+    doc = (out / "document.md").read_text(encoding="utf-8")
+    assert "recursive expansion is disabled" in doc.lower()
+
+
 def test_max_bytes_truncates(tmp_path: Path) -> None:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
