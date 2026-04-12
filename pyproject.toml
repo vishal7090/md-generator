@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,11 +8,11 @@ version = "0.1.0"
 description = "Convert PDF, Office, images, text/JSON/XML, and ZIP archives to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary. All rights reserved. No license granted." }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "md-generator contributors" }]
 keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip"]
 classifiers = [
-  "License :: Other/Proprietary License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Topic :: Text Processing :: Markup :: Markdown",

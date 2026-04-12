@@ -5,9 +5,9 @@ Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoin
 - **PyPI name:** `md-generator` (import package: `md_generator`)
 - **Source:** [github.com/vishal7090/md-generator](https://github.com/vishal7090/md-generator)
 - **Python:** 3.10+
-- **License:** **None granted** — proprietary; all rights reserved. See [COPYRIGHT](COPYRIGHT).
+- **License:** [MIT](LICENSE)
 
-**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [Development](#development)
+**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ---
 
@@ -407,6 +407,8 @@ Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/test
 
 | Path | Role |
 |------|------|
+| `LICENSE` | MIT license text |
+| `CODE_OF_CONDUCT.md` | [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 |
 | `src/md_generator/` | **Library source** (all formats + `api` subpackages) |
 | `pyproject.toml` | Packaging, extras, CLI entry points, pytest |
 | `*-to-md/` | **Docs, tests, fixtures**, thin `converter.py` shims, some `run.py` helpers |
@@ -418,4 +420,4 @@ For deeper behavior per format, see the original README files under each `*-to-m
 
 ## Legal
 
-This software is **not** released under an open-source or permissive license. The copyright notice in [COPYRIGHT](COPYRIGHT) applies. If you need rights to use, modify, or redistribute the code, you must obtain **explicit written permission** from the copyright holder(s).
+This project is released under the [MIT License](LICENSE). A copy of the license text is included in the repository root.
