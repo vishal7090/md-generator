@@ -1,4 +1,4 @@
-"""Shim CLI: prefer `md-image` after `pip install md-generator`."""
+"""Shim CLI: prefer `md-image` after `pip install mdengine`."""
 
 from __future__ import annotations
 

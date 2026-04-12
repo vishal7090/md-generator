@@ -299,7 +299,7 @@ def _merge_artifact_images(
 
 
 def _missing_dep_message(feature: str, extra: str) -> str:
-    return f"Content could not be parsed ({feature} unavailable: install md-generator[{extra}]).\n"
+    return f"Content could not be parsed ({feature} unavailable: install mdengine[{extra}]).\n"
 
 
 def _convert_pdf_office(
@@ -500,7 +500,7 @@ def _postpass_image_to_markdown(
 
         from md_generator.image.convert_impl import ConvertOptions as ImgOpts, convert_image_paths
     except ImportError:
-        return "\n\n*(Post-pass image-to-md skipped: install md-generator[image].)*\n"
+        return "\n\n*(Post-pass image-to-md skipped: install mdengine[image].)*\n"
 
     raw_engines = options.image_to_md_engines.strip() or DEFAULT_IMAGE_TO_MD_ENGINES
     engines = tuple(p.strip().lower() for p in raw_engines.split(",") if p.strip())

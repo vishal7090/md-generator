@@ -3,14 +3,14 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "md-generator"
+name = "mdengine"
 version = "0.1.0"
 description = "Convert PDF, Office, images, text/JSON/XML, and ZIP archives to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "md-generator contributors" }]
+authors = [{ name = "mdengine contributors" }]
 keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip"]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -55,7 +55,7 @@ api = [
   "pydantic-settings>=2.0.0",
 ]
 mcp = ["mcp>=1.2.0", "fastmcp>=2.3.0"]
-dev = ["pytest>=8.0.0", "httpx>=0.27.0", "md-generator[api]", "md-generator[mcp]"]
+dev = ["pytest>=8.0.0", "httpx>=0.27.0", "mdengine[api]", "mdengine[mcp]"]
 all = [
   "pymupdf>=1.24.0",
   "pdfplumber>=0.11.0",

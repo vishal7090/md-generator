@@ -62,7 +62,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--repo-root",
         type=Path,
         default=None,
-        help="Deprecated: ignored (install extras, e.g. md-generator[pdf,word], for embedded office files)",
+        help="Deprecated: ignored (install extras, e.g. mdengine[pdf,word], for embedded office files)",
     )
     p.add_argument(
         "--no-expand-nested-zips",

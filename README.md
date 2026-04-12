@@ -1,8 +1,8 @@
-# md-generator
+# mdengine
 
 Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoint (.pptx)**, **Excel (.xlsx/.xlsm)**, **images** (OCR), **plain text / JSON / XML**, and **ZIP archives** into **Markdown** (and related assets). Install only the extras you need; everything imports under the **`md_generator`** package.
 
-- **PyPI name:** `md-generator` (import package: `md_generator`)
+- **PyPI name:** `mdengine` (import package: `md_generator`)
 - **Source:** [github.com/vishal7090/md-generator](https://github.com/vishal7090/md-generator)
 - **Python:** 3.10+
 - **License:** [MIT](LICENSE)
@@ -23,7 +23,7 @@ Use this checklist the first time you run the tools on a machine that does not h
    Then activate it: **Windows (PowerShell)** `.\.venv\Scripts\Activate.ps1` · **Windows (CMD)** `.venv\Scripts\activate.bat` · **macOS / Linux** `source .venv/bin/activate`.
 3. **Install this package with the extras you need** (see [Optional dependency extras](#optional-dependency-extras) for what each extra does):
    ```bash
-   pip install "md-generator[pdf,word]"
+   pip install "mdengine[pdf,word]"
    ```
    If the package is not on PyPI yet, clone [the repository](https://github.com/vishal7090/md-generator), `cd` into the repo root, then:
    ```bash
@@ -56,8 +56,8 @@ pip install -e ".[ppt,xlsx,image,archive,api,mcp]"
 From PyPI (once published):
 
 ```bash
-pip install "md-generator[pdf,word]"
-pip install "md-generator[all]"
+pip install "mdengine[pdf,word]"
+pip install "mdengine[all]"
 ```
 
 ### Optional dependency extras
@@ -88,7 +88,7 @@ All converters can be run from a terminal after you install the package (with th
 ### 1. Install (once)
 
 ```bash
-pip install "md-generator[pdf,word]"          # adjust extras: ppt, xlsx, image, archive, text, …
+pip install "mdengine[pdf,word]"          # adjust extras: ppt, xlsx, image, archive, text, …
 # or from a clone:
 pip install -e ".[pdf,word,archive]"
 ```
@@ -317,7 +317,7 @@ Upload field name is **`file`** (multipart form). Use `httpx` or `curl -F "file=
 
 ### Run with Uvicorn
 
-Install `md-generator[api]` plus the format extra(s), then run the **`app`** object from the table below.
+Install `mdengine[api]` plus the format extra(s), then run the **`app`** object from the table below.
 
 | Service | Uvicorn target | Required extras (typical) |
 |---------|----------------|---------------------------|
@@ -388,7 +388,7 @@ python xlsx-to-md/run.py mcp --transport stdio
 
 The XLSX MCP server is built in code (`build_mcp_server()` in `md_generator.xlsx.mcp_server`) and is mounted on the XLSX FastAPI app when MCP dependencies are installed.
 
-Install **`md-generator[mcp]`** (and usually **`[api]`** when using HTTP) for MCP-related imports to resolve.
+Install **`mdengine[mcp]`** (and usually **`[api]`** when using HTTP) for MCP-related imports to resolve.
 
 ---
 

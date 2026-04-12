@@ -39,7 +39,7 @@ def main() -> None:
         try:
             import uvicorn
         except ImportError as e:
-            print("Install API deps: pip install md-generator[xlsx,api]", file=sys.stderr)
+            print("Install API deps: pip install mdengine[xlsx,api]", file=sys.stderr)
             raise SystemExit(1) from e
         from md_generator.xlsx.api.app import app as api_app
 
@@ -49,7 +49,7 @@ def main() -> None:
         try:
             from md_generator.xlsx.mcp_server import build_mcp_server
         except ImportError as e:
-            print("Install MCP deps: pip install md-generator[mcp]", file=sys.stderr)
+            print("Install MCP deps: pip install mdengine[mcp]", file=sys.stderr)
             raise SystemExit(1) from e
         mcp = build_mcp_server()
         mcp.run(transport=ns.transport)

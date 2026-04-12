@@ -1,4 +1,4 @@
-# This workflow will upload a Python Package to PyPI when a release is created
+# This workflow builds distributions and publishes to TestPyPI and PyPI when a release is created.
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
 
 # This workflow uses actions that are not certified by GitHub.
@@ -38,6 +38,30 @@ jobs:
           name: release-dists
           path: dist/
 
+  testpypi-publish:
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      id-token: write
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/mdengine/
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/
+
   pypi-publish:
     runs-on: ubuntu-latest
     needs:
@@ -50,8 +74,8 @@ jobs:
     # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
     environment:
       name: pypi
-      # PyPI project (distribution name: md-generator). Deployment links to the project page.
-      url: https://pypi.org/project/md-generator/
+      # PyPI project (distribution name: mdengine). Deployment links to the project page.
+      url: https://pypi.org/project/mdengine/
 
     steps:
       - name: Retrieve release distributions

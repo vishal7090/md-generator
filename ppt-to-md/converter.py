@@ -1,4 +1,4 @@
-"""Shim CLI: prefer `md-ppt` after `pip install md-generator`."""
+"""Shim CLI: prefer `md-ppt` after `pip install mdengine`."""
 
 from __future__ import annotations
 
