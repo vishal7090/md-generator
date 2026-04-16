@@ -72,6 +72,8 @@ pip install "mdengine[all]"
 | `image-ocr` | Heavy OCR backends (pytesseract, paddle, easyocr, …) |
 | `text` | TXT / JSON / XML converter (stdlib-oriented; marker extra) |
 | `archive` | ZIP → Markdown layout (Pillow; optional tesseract for inline image OCR) |
+| `url` | HTTP(S) HTML → Markdown (httpx, readability-lxml, markdownify, BeautifulSoup, lxml) |
+| `url-full` | `url` plus PDF/Word/PPTX/XLSX/archive stack for **post-converting** downloaded linked files to Markdown |
 | `api` | FastAPI, uvicorn, httpx, pydantic-settings |
 | `mcp` | MCP servers (`mcp`, `fastmcp` where used) |
 | `dev` | pytest + API/MCP test helpers |
@@ -113,6 +115,7 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-image` | `md_generator.image.converter:main` | `md-image ./scans page.md` |
 | `md-text` | `md_generator.text.converter:main` | `md-text config.xml out.md` |
 | `md-zip` | `md_generator.archive.converter:main` | `md-zip bundle.zip ./zip-out` |
+| `md-url` | `md_generator.url.converter:main` | `md-url https://example.com/doc ./web-out --artifact-layout` |
 
 Every command accepts **`-h` / `--help`** for full flags (artifact layout, OCR, ZIP options, etc.).
 
@@ -129,6 +132,7 @@ md-xlsx -i export.csv -o ./csv-out
 md-image ./photos ocr.md --engines tess --strategy best
 md-text data.json data.md
 md-zip archive.zip ./unzipped-md
+md-url https://example.com/page ./page-bundle --artifact-layout
 ```
 
 **Windows PowerShell** (same commands; use backslashes for paths if you prefer)
@@ -136,6 +140,7 @@ md-zip archive.zip ./unzipped-md
 ```powershell
 md-pdf .\manual.pdf .\out\doc.md
 md-zip .\archive.zip .\zip-out
+md-url https://example.com/page .\page-bundle --artifact-layout
 ```
 
 **Windows CMD**
@@ -143,11 +148,12 @@ md-zip .\archive.zip .\zip-out
 ```cmd
 md-pdf manual.pdf out\doc.md
 md-zip archive.zip zip-out
+md-url https://example.com/page page-bundle --artifact-layout
 ```
 
 ### 5. Run without `pip install` (repo clone + `PYTHONPATH`)
 
-The folders `pdf-to-md/`, `word-to-md/`, … contain a thin `converter.py` that calls the same code as `md-pdf`, `md-word`, etc. From the **repository root**, point Python at `src` so `md_generator` imports, then run the shim:
+The folders `pdf-to-md/`, `word-to-md/`, `url-to-md/`, … contain a thin `converter.py` that calls the same code as `md-pdf`, `md-word`, etc. From the **repository root**, point Python at `src` so `md_generator` imports, then run the shim:
 
 **PowerShell**
 
@@ -308,12 +314,12 @@ convert_zip(
 
 All format APIs follow a similar pattern:
 
-- **`POST /convert/sync`** — upload a file; response is often a **ZIP** (artifact bundle) for larger formats.
+- **`POST /convert/sync`** — upload a file (most converters) **or** send JSON (`url-to-md`); response is often a **ZIP** (artifact bundle) for larger formats.
 - **`POST /convert/jobs`** — async job; returns `job_id`.
 - **`GET /convert/jobs/{job_id}`** — status.
 - **`GET /convert/jobs/{job_id}/download`** — download result when ready.
 
-Upload field name is **`file`** (multipart form). Use `httpx` or `curl -F "file=@path/to/file"`.
+Upload field name is **`file`** (multipart form) for file-based converters. Use `httpx` or `curl -F "file=@path/to/file"`. **URL** conversion uses a **JSON** body (`url` or `urls`); see [url-to-md/README.md](url-to-md/README.md).
 
 ### Run with Uvicorn
 
@@ -328,6 +334,7 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | Image | `md_generator.image.api.main:app` | `image`, `api`, `mcp` |
 | Text/JSON/XML | `md_generator.text.api.main:app` | `text`, `api`, `mcp` |
 | ZIP | `md_generator.archive.api.main:app` | `archive`, `api`, `mcp` (+ extras for nested office/PDF) |
+| URL / HTML | `md_generator.url.api.main:app` | `url`, `api`, `mcp` |
 
 Examples:
 
@@ -335,6 +342,7 @@ Examples:
 uvicorn md_generator.pdf.api.main:app --host 127.0.0.1 --port 8001
 uvicorn md_generator.word.api.main:app --host 127.0.0.1 --port 8002
 uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8010
+uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8011
 ```
 
 ### MCP over HTTP on the same server
@@ -353,6 +361,7 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | PPTX | `PPT_TO_MD_` | `PPT_TO_MD_MAX_UPLOAD_MB`, … |
 | Text | `TXT_JSON_XML_TO_MD_` | same pattern |
 | XLSX | `XLSX_TO_MD_` | `XLSX_TO_MD_TEMP_DIR`, `XLSX_TO_MD_CORS_ORIGINS`, etc. (see `md_generator.xlsx.api.app`) |
+| URL | `URL_TO_MD_` | `URL_TO_MD_MAX_SYNC_URLS`, `URL_TO_MD_MAX_SYNC_CRAWL_PAGES`, `URL_TO_MD_MAX_JOB_URLS`, `URL_TO_MD_JOB_TTL_SECONDS`, `URL_TO_MD_TEMP_DIR`, `URL_TO_MD_CORS_ORIGINS` |
 
 Exact variable names match the `ApiSettings` / helper functions in each `api/settings` or `api/app` module.
 
@@ -375,6 +384,7 @@ Two usage patterns:
 | PDF (FastMCP) | `python -m md_generator.pdf.api.mcp_server` / `--transport stdio` / `sse` / `streamable-http` |
 | PPTX | `python -m md_generator.ppt.api.mcp_server` (see module docstring for flags) |
 | Image | `python -m md_generator.image.api.mcp_server` (see module for CLI) |
+| URL / HTML | `python -m md_generator.url.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
 
 **Word** and **XLSX** also ship a small runner script in the repo:
 
