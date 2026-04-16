@@ -6,7 +6,8 @@
     { "path": "word-to-md", "name": "word-to-md" },
     { "path": "pdf-to-md", "name": "pdf-to-md" },
     { "path": "ppt-to-md", "name": "ppt-to-md" },
-    { "path": "xlsx-to-md", "name": "xlsx-to-md" }
+    { "path": "xlsx-to-md", "name": "xlsx-to-md" },
+    { "path": "url-to-md", "name": "url-to-md" }
   ],
   "settings": {
     "python.languageServer": "Pylance",

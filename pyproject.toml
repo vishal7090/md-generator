@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mdengine"
 version = "0.1.0"
-description = "Convert PDF, Office, images, text/JSON/XML, and ZIP archives to Markdown."
+description = "Convert PDF, Office, images, text/JSON/XML, ZIP archives, and web URLs to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "mdengine contributors" }]
-keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip"]
+keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip", "url", "html"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -47,6 +47,31 @@ image-ocr = [
 ]
 text = []
 archive = ["Pillow>=10.0.0", "pytesseract>=0.3.10"]
+url = [
+  "httpx>=0.27.0",
+  "beautifulsoup4>=4.12.0",
+  "lxml>=5.0.0",
+  "lxml_html_clean>=0.4.0",
+  "markdownify>=0.14.0",
+  "readability-lxml>=0.8.1",
+]
+# Convenience extra for URL fetch + post-convert of downloaded office/PDF/ZIP/etc.
+url-full = [
+  "httpx>=0.27.0",
+  "beautifulsoup4>=4.12.0",
+  "lxml>=5.0.0",
+  "lxml_html_clean>=0.4.0",
+  "markdownify>=0.14.0",
+  "readability-lxml>=0.8.1",
+  "pymupdf>=1.24.0",
+  "pdfplumber>=0.11.0",
+  "mammoth>=1.8.0",
+  "python-pptx>=1.0.0",
+  "Pillow>=10.0.0",
+  "olefile>=0.47",
+  "openpyxl>=3.1.0",
+  "pytesseract>=0.3.10",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -55,7 +80,13 @@ api = [
   "pydantic-settings>=2.0.0",
 ]
 mcp = ["mcp>=1.2.0", "fastmcp>=2.3.0"]
-dev = ["pytest>=8.0.0", "httpx>=0.27.0", "mdengine[api]", "mdengine[mcp]"]
+dev = [
+  "pytest>=8.0.0",
+  "httpx>=0.27.0",
+  "mdengine[api]",
+  "mdengine[mcp]",
+  "mdengine[url]",
+]
 all = [
   "pymupdf>=1.24.0",
   "pdfplumber>=0.11.0",
@@ -78,6 +109,9 @@ all = [
   "pydantic-settings>=2.0.0",
   "mcp>=1.2.0",
   "fastmcp>=2.3.0",
+  "beautifulsoup4>=4.12.0",
+  "lxml_html_clean>=0.4.0",
+  "readability-lxml>=0.8.1",
 ]
 
 [project.urls]
@@ -93,6 +127,7 @@ md-xlsx = "md_generator.xlsx.converter:main"
 md-image = "md_generator.image.converter:main"
 md-text = "md_generator.text.converter:main"
 md-zip = "md_generator.archive.converter:main"
+md-url = "md_generator.url.converter:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -107,5 +142,6 @@ testpaths = [
   "image-to-md/tests",
   "txt-json-xml-to-md/tests",
   "zip-to-md/tests",
+  "url-to-md/tests",
 ]
 markers = ["integration: optional dependency or slower checks"]

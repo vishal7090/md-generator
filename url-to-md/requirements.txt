@@ -1,0 +1,9 @@
+# Install from repository root so `md_generator` is importable:
+#   pip install -e "..[url]"
+pytest>=8.0.0
+httpx>=0.27.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+lxml_html_clean>=0.4.0
+markdownify>=0.14.0
+readability-lxml>=0.8.1

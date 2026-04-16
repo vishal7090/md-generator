@@ -1,0 +1,19 @@
+# Build from repository root, e.g.:
+#   docker build -f url-to-md/Dockerfile.api -t url-to-md-api .
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN useradd -m -u 1000 appuser
+
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+COPY url-to-md/requirements.txt url-to-md/requirements-api.txt ./url-to-md/
+
+RUN pip install --no-cache-dir -e ".[url,api,mcp]"
+
+USER appuser
+
+EXPOSE 8000
+
+CMD ["uvicorn", "md_generator.url.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
