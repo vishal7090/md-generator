@@ -347,7 +347,7 @@ pip install "mdengine[video,api,mcp]"   # video CLI + HTTP + MCP (same ML stack 
 from pathlib import Path
 from md_generator.media.audio import AudioToMarkdownService, AudioConverter
 
-svc = AudioToMarkdownService(whisper_model="base", language=None)
+svc = AudioToMarkdownService(whisper_model="base")  # language omitted → Whisper auto-detect; pass e.g. language="en" to force
 text = svc.to_markdown(Path("input.mp3"), title="My title")
 svc.write_markdown(Path("input.mp3"), Path("out/transcript.md"))
 
@@ -360,7 +360,7 @@ result = svc.transcribe(Path("input.wav"))  # metadata + segments + plain_text
 from pathlib import Path
 from md_generator.media.video import VideoToMarkdownService
 
-svc = VideoToMarkdownService(whisper_model="base")
+svc = VideoToMarkdownService(whisper_model="base")  # transcription language omitted → auto-detect
 md = svc.to_markdown(Path("input.mp4"), title=None)
 svc.write_markdown(Path("input.mp4"), Path("out/transcript.md"))
 ```
@@ -373,7 +373,7 @@ Each service exposes the same job pattern as other converters:
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /convert/sync` | Multipart field **`file`**; returns **Markdown** body. Query: `whisper_model`, `language`, `title`. |
+| `POST /convert/sync` | Multipart field **`file`**; returns **Markdown** body. Query: `whisper_model`, `language` (omit or `auto` for detection; pass a code to force), `title`. |
 | `POST /convert/jobs` | Async upload; returns `{ "job_id", "status" }`. |
 | `GET /convert/jobs/{job_id}` | Status JSON. |
 | `GET /convert/jobs/{job_id}/download` | Markdown when `done`; workspace removed after download. |

@@ -43,8 +43,10 @@ def _metadata_lines(meta: MediaMetadata) -> list[str]:
         lines.append(f"- **Audio codec:** {meta.audio_codec}")
     if meta.sample_rate is not None:
         lines.append(f"- **Sample rate (Hz):** {meta.sample_rate}")
+    if meta.language_profile:
+        lines.append(f"- **Language option:** {meta.language_profile}")
     if meta.whisper_language:
-        lines.append(f"- **Detected / set language:** {meta.whisper_language}")
+        lines.append(f"- **Detected language (Whisper):** {meta.whisper_language}")
     return lines
 
 

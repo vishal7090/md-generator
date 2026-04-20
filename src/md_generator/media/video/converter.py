@@ -80,7 +80,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", type=Path, help="Input video file path")
     p.add_argument("output", type=Path, help="Output .md file path")
     p.add_argument("--model", default="base", help="Whisper model name (default: base)")
-    p.add_argument("--language", default=None, help="Force Whisper language code (optional)")
+    p.add_argument(
+        "--language",
+        default=None,
+        help=(
+            "Whisper language (default: auto-detect if omitted). Single code/name (e.g. en, hi) to force, "
+            "or hi,en / hinglish for Hindi+English mixed. Explicit auto / detect matches omitting the flag."
+        ),
+    )
     p.add_argument("--title", default=None, help="Override document title in Markdown")
     p.add_argument("-v", "--verbose", action="store_true")
     return p

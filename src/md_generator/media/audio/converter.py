@@ -14,6 +14,7 @@ from md_generator.media.document_converter import (
     ffprobe_json,
     video_probe_from_ffprobe,
 )
+from md_generator.media.whisper_language import resolve_whisper_language
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class MediaMetadata:
     whisper_language: str | None
     whisper_model: str
     source_path: str
+    language_profile: str | None = None
 
 
 @dataclass
@@ -92,9 +94,12 @@ class AudioConverter(DocumentConverter):
 
         meta = _metadata_from_ffprobe(path, self._model_name, None)
         model = self._load_model()
+        lang_kw, init_prompt, profile = resolve_whisper_language(self._language)
         kwargs: dict = {"verbose": False}
-        if self._language:
-            kwargs["language"] = self._language
+        if lang_kw:
+            kwargs["language"] = lang_kw
+        if init_prompt:
+            kwargs["initial_prompt"] = init_prompt
         asr = model.transcribe(str(path), **kwargs)
         whisper_lang = asr.get("language")
         text = (asr.get("text") or "").strip()
@@ -123,6 +128,7 @@ class AudioConverter(DocumentConverter):
             whisper_language=whisper_lang,
             whisper_model=self._model_name,
             source_path=meta.source_path,
+            language_profile=profile,
         )
         return TranscriptionResult(
             metadata=meta,
@@ -136,7 +142,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", type=Path, help="Input audio file path")
     p.add_argument("output", type=Path, help="Output .md file path")
     p.add_argument("--model", default="base", help="Whisper model name (default: base)")
-    p.add_argument("--language", default=None, help="Force Whisper language code (optional)")
+    p.add_argument(
+        "--language",
+        default=None,
+        help=(
+            "Whisper language (default: auto-detect if omitted). Single code/name (e.g. en, hi) to force, "
+            "or hi,en / hinglish for Hindi+English mixed (auto-detect + bilingual prompt). "
+            "Explicit auto / detect is the same as omitting this flag."
+        ),
+    )
     p.add_argument("--title", default=None, help="Override document title in Markdown")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -158,3 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as e:
         print(str(e), file=sys.stderr)
         return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
