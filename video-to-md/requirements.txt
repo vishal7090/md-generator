@@ -1,0 +1,2 @@
+openai-whisper>=20231117
+pytest>=8.0.0
