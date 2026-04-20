@@ -120,10 +120,13 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-url` | `md_generator.url.converter:main` | `md-url https://example.com/doc ./web-out --artifact-layout` |
 | `md-audio` | `md_generator.media.audio.converter:main` | `md-audio clip.mp3 transcript.md --model base` |
 | `md-video` | `md_generator.media.video.converter:main` | `md-video clip.mp4 transcript.md --model base` |
+| `md-youtube` | `md_generator.media.youtube.converter:main` | `md-youtube "https://youtu.be/…" out.md --transcript-lang en` |
 | `md-audio-api` | `md_generator.media.audio.api.run:main` | REST + MCP on port **8011** (see [Audio and video to Markdown](#audio-and-video-to-markdown)) |
 | `md-video-api` | `md_generator.media.video.api.run:main` | REST + MCP on port **8012** |
+| `md-youtube-api` | `md_generator.media.youtube.api.run:main` | REST + MCP on port **8013** (JSON `url` body; see same section) |
 | `md-audio-mcp` | `md_generator.media.audio.api.mcp_server:main` | Standalone MCP (`--transport stdio` \| `sse` \| `streamable-http`) |
 | `md-video-mcp` | `md_generator.media.video.api.mcp_server:main` | Same for video |
+| `md-youtube-mcp` | `md_generator.media.youtube.api.mcp_server:main` | Same for YouTube (`youtube_url_to_markdown`) |
 
 Every command accepts **`-h` / `--help`** for full flags (artifact layout, OCR, ZIP options, etc.).
 
@@ -337,6 +340,7 @@ Library code lives under **`md_generator.media`**: shared probing in [`document_
 ```bash
 pip install "mdengine[audio,api,mcp]"    # audio CLI + HTTP + MCP
 pip install "mdengine[video,api,mcp]"   # video CLI + HTTP + MCP (same ML stack as audio)
+pip install "mdengine[youtube,api,mcp]" # YouTube URL → Markdown (captions + metadata; optional Whisper fallback)
 ```
 
 ### Python library
@@ -365,6 +369,18 @@ md = svc.to_markdown(Path("input.mp4"), title=None)
 svc.write_markdown(Path("input.mp4"), Path("out/transcript.md"))
 ```
 
+**YouTube** — captions API + page metadata (BeautifulSoup / oEmbed); optional **yt-dlp + Whisper** when captions are missing (`mdengine[audio]` and `yt-dlp` on `PATH`, or `MD_YOUTUBE_YTDLP`):
+
+```python
+from md_generator.media.youtube import YouTubeToMarkdownService
+
+svc = YouTubeToMarkdownService(whisper_model="base")
+md = svc.to_markdown("https://www.youtube.com/watch?v=VIDEO_ID", transcript_languages=["en"])
+svc.write_markdown("https://youtu.be/VIDEO_ID", Path("out/youtube.md"))
+```
+
+For file-based pipelines, [`YouTubeConverter`](src/md_generator/media/youtube/converter.py) reads a `.url` / `.yturl` / `.youtube` file (or a `.txt` whose first non-comment line is a YouTube URL) and implements [`DocumentConverter`](src/md_generator/media/document_converter.py).
+
 Public symbols are also re-exported from [`md_generator.media`](src/md_generator/media/__init__.py) for ffprobe helpers (`ffprobe_json`, `VideoProbeResult`, …).
 
 ### REST API (FastAPI)
@@ -379,13 +395,15 @@ Each service exposes the same job pattern as other converters:
 | `GET /convert/jobs/{job_id}/download` | Markdown when `done`; workspace removed after download. |
 
 **Audio** defaults: `MD_AUDIO_MAX_UPLOAD_MB=200`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB=40`, `MD_AUDIO_API_PORT=8011`.  
-**Video** defaults: `MD_VIDEO_MAX_UPLOAD_MB=500`, `MD_VIDEO_MAX_SYNC_UPLOAD_MB=80`, `MD_VIDEO_API_PORT=8012`.
+**Video** defaults: `MD_VIDEO_MAX_UPLOAD_MB=500`, `MD_VIDEO_MAX_SYNC_UPLOAD_MB=80`, `MD_VIDEO_API_PORT=8012`.  
+**YouTube** uses **JSON** (not multipart): `POST /convert/sync` and `POST /convert/jobs` accept `{"url":"https://www.youtube.com/watch?v=…","title":null,"transcript_languages":["en"],"enable_audio_fallback":true,"whisper_model":"base","language":null}`. Defaults: `MD_YOUTUBE_API_PORT=8013`, `MD_YOUTUBE_JOB_TTL_SECONDS`, `MD_YOUTUBE_CORS_ORIGINS`, `MD_YOUTUBE_TEMP_DIR`.
 
 Run with the bundled runners (each call builds the app with **`factory=True`** for a clean MCP session manager):
 
 ```bash
 md-audio-api --host 127.0.0.1 --port 8011
 md-video-api --host 127.0.0.1 --port 8012
+md-youtube-api --host 127.0.0.1 --port 8013
 ```
 
 Or with Uvicorn directly (the ASGI app is built by **`create_app()`** so each worker gets its own MCP session manager):
@@ -393,6 +411,7 @@ Or with Uvicorn directly (the ASGI app is built by **`create_app()`** so each wo
 ```bash
 uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
 uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
+uvicorn md_generator.media.youtube.api.main:create_app --factory --host 127.0.0.1 --port 8013
 ```
 
 The module also defines **`app = create_app()`** for a single-process target: `uvicorn md_generator.media.audio.api.main:app` (no `--factory`).
@@ -401,7 +420,7 @@ Swagger is at **`/docs`** when the app is running.
 
 ### MCP (stdio, SSE, streamable HTTP)
 
-1. **With FastAPI** — start `md-audio-api` or `md-video-api`; mount Streamable HTTP MCP at **`http://<host>:<port>/mcp`** (same host as REST).
+1. **With FastAPI** — start `md-audio-api`, `md-video-api`, or `md-youtube-api`; mount Streamable HTTP MCP at **`http://<host>:<port>/mcp`** (same host as REST).
 2. **Standalone** — process speaks MCP only:
 
 ```bash
@@ -409,16 +428,18 @@ md-audio-mcp --transport stdio
 md-audio-mcp --transport sse
 md-audio-mcp --transport streamable-http
 md-video-mcp --transport stdio
+md-youtube-mcp --transport stdio
 ```
 
 **Audio MCP tools:** `transcribe_audio_path`, `transcribe_audio_base64`.  
-**Video MCP tools:** `transcribe_video_path`, `transcribe_video_base64`.
+**Video MCP tools:** `transcribe_video_path`, `transcribe_video_base64`.  
+**YouTube MCP tool:** `youtube_url_to_markdown`.
 
-Equivalent modules: `python -m md_generator.media.audio.api.mcp_server`, `python -m md_generator.media.video.api.mcp_server`.
+Equivalent modules: `python -m md_generator.media.audio.api.mcp_server`, `python -m md_generator.media.video.api.mcp_server`, `python -m md_generator.media.youtube.api.mcp_server`.
 
 ### Thin shims (repo clone)
 
-[`audio-to-md/converter.py`](audio-to-md/converter.py) and [`video-to-md/converter.py`](video-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video`. Tests and `pytest.ini` live under `audio-to-md/tests/` and `video-to-md/tests/`.
+[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`.
 
 ---
 
@@ -449,6 +470,7 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | URL / HTML | `md_generator.url.api.main:app` | `url`, `api`, `mcp` |
 | Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (use **`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
 | Video (Whisper) | `md_generator.media.video.api.main:create_app` (use **`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
+| YouTube | `md_generator.media.youtube.api.main:create_app` (use **`--factory`**) or `…main:app` | `youtube`, `api`, `mcp` |
 
 Examples:
 
@@ -459,6 +481,7 @@ uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8010
 uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8011
 uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
 uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
+uvicorn md_generator.media.youtube.api.main:create_app --factory --host 127.0.0.1 --port 8013
 ```
 
 ### MCP over HTTP on the same server
@@ -480,6 +503,7 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | URL | `URL_TO_MD_` | `URL_TO_MD_MAX_SYNC_URLS`, `URL_TO_MD_MAX_SYNC_CRAWL_PAGES`, `URL_TO_MD_MAX_JOB_URLS`, `URL_TO_MD_JOB_TTL_SECONDS`, `URL_TO_MD_TEMP_DIR`, `URL_TO_MD_CORS_ORIGINS` |
 | Audio API | `MD_AUDIO_` | `MD_AUDIO_MAX_UPLOAD_MB`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB`, `MD_AUDIO_JOB_TTL_SECONDS`, `MD_AUDIO_TEMP_DIR`, `MD_AUDIO_CORS_ORIGINS`, `MD_AUDIO_API_HOST`, `MD_AUDIO_API_PORT` |
 | Video API | `MD_VIDEO_` | Same pattern as audio with `MD_VIDEO_*` (defaults: larger upload/sync caps, port **8012**) |
+| YouTube API | `MD_YOUTUBE_` | `MD_YOUTUBE_JOB_TTL_SECONDS`, `MD_YOUTUBE_TEMP_DIR`, `MD_YOUTUBE_CORS_ORIGINS`, `MD_YOUTUBE_API_HOST`, `MD_YOUTUBE_API_PORT` (default **8013**); optional `MD_YOUTUBE_YTDLP` path for audio fallback |
 
 Exact variable names match the `ApiSettings` / helper functions in each `api/settings` or `api/app` module.
 
@@ -505,6 +529,7 @@ Two usage patterns:
 | URL / HTML | `python -m md_generator.url.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
 | Audio | `md-audio-mcp` or `python -m md_generator.media.audio.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 | Video | `md-video-mcp` or `python -m md_generator.media.video.api.mcp_server` — same transports |
+| YouTube | `md-youtube-mcp` or `python -m md_generator.media.youtube.api.mcp_server` — same transports |
 
 **Word** and **XLSX** also ship a small runner script in the repo:
 
