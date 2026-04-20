@@ -1,13 +1,13 @@
 # mdengine
 
-Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoint (.pptx)**, **Excel (.xlsx/.xlsm)**, **images** (OCR), **plain text / JSON / XML**, and **ZIP archives** into **Markdown** (and related assets). Install only the extras you need; everything imports under the **`md_generator`** package.
+Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoint (.pptx)**, **Excel (.xlsx/.xlsm)**, **images** (OCR), **plain text / JSON / XML**, **ZIP archives**, and **audio / video** (Whisper transcription → Markdown) into **Markdown** (and related assets). Install only the extras you need; everything imports under the **`md_generator`** package.
 
 - **PyPI name:** `mdengine` (import package: `md_generator`)
 - **Source:** [github.com/vishal7090/md-generator](https://github.com/vishal7090/md-generator)
 - **Python:** 3.10+
 - **License:** [MIT](LICENSE)
 
-**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
+**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [Audio and video](#audio-and-video-to-markdown) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ---
 
@@ -74,6 +74,8 @@ pip install "mdengine[all]"
 | `archive` | ZIP → Markdown layout (Pillow; optional tesseract for inline image OCR) |
 | `url` | HTTP(S) HTML → Markdown (httpx, readability-lxml, markdownify, BeautifulSoup, lxml) |
 | `url-full` | `url` plus PDF/Word/PPTX/XLSX/archive stack for **post-converting** downloaded linked files to Markdown |
+| `audio` | **Audio → Markdown** via Whisper (`openai-whisper`); ships `imageio-ffmpeg` for a bundled **ffmpeg** when none is on `PATH` |
+| `video` | **Video → Markdown** (ffmpeg extracts mono 16 kHz WAV, then same Whisper stack as `audio`) |
 | `api` | FastAPI, uvicorn, httpx, pydantic-settings |
 | `mcp` | MCP servers (`mcp`, `fastmcp` where used) |
 | `dev` | pytest + API/MCP test helpers |
@@ -116,6 +118,12 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-text` | `md_generator.text.converter:main` | `md-text config.xml out.md` |
 | `md-zip` | `md_generator.archive.converter:main` | `md-zip bundle.zip ./zip-out` |
 | `md-url` | `md_generator.url.converter:main` | `md-url https://example.com/doc ./web-out --artifact-layout` |
+| `md-audio` | `md_generator.media.audio.converter:main` | `md-audio clip.mp3 transcript.md --model base` |
+| `md-video` | `md_generator.media.video.converter:main` | `md-video clip.mp4 transcript.md --model base` |
+| `md-audio-api` | `md_generator.media.audio.api.run:main` | REST + MCP on port **8011** (see [Audio and video to Markdown](#audio-and-video-to-markdown)) |
+| `md-video-api` | `md_generator.media.video.api.run:main` | REST + MCP on port **8012** |
+| `md-audio-mcp` | `md_generator.media.audio.api.mcp_server:main` | Standalone MCP (`--transport stdio` \| `sse` \| `streamable-http`) |
+| `md-video-mcp` | `md_generator.media.video.api.mcp_server:main` | Same for video |
 
 Every command accepts **`-h` / `--help`** for full flags (artifact layout, OCR, ZIP options, etc.).
 
@@ -133,6 +141,8 @@ md-image ./photos ocr.md --engines tess --strategy best
 md-text data.json data.md
 md-zip archive.zip ./unzipped-md
 md-url https://example.com/page ./page-bundle --artifact-layout
+md-audio ./voice.mp3 ./voice.md --model tiny
+md-video ./screen.mp4 ./screen.md --model base
 ```
 
 **Windows PowerShell** (same commands; use backslashes for paths if you prefer)
@@ -141,6 +151,8 @@ md-url https://example.com/page ./page-bundle --artifact-layout
 md-pdf .\manual.pdf .\out\doc.md
 md-zip .\archive.zip .\zip-out
 md-url https://example.com/page .\page-bundle --artifact-layout
+md-audio .\voice.mp3 .\voice.md --model tiny
+md-video .\screen.mp4 .\screen.md --model base
 ```
 
 **Windows CMD**
@@ -310,6 +322,106 @@ convert_zip(
 
 ---
 
+## Audio and video to Markdown
+
+Library code lives under **`md_generator.media`**: shared probing in [`document_converter.py`](src/md_generator/media/document_converter.py), **audio** in [`media/audio/`](src/md_generator/media/audio/) (Whisper + ffprobe / ffmpeg metadata), **video** in [`media/video/`](src/md_generator/media/video/) (ffmpeg extracts audio only; transcription always goes through the audio service—no duplicate Whisper path in video).
+
+### System requirements
+
+- **ffmpeg** (and **ffprobe** when available) on `PATH` for metadata and for **video** demux. If `ffprobe` is missing or misbehaving, metadata falls back to parsing `ffmpeg -i` stderr.
+- Optional **`FFMPEG`** environment variable: absolute path to an `ffmpeg` executable (see [`resolve_ffmpeg_executable()`](src/md_generator/media/document_converter.py)).
+- **GPU** is optional; Whisper runs on CPU if needed (may log FP16→FP32 on CPU).
+
+### Install
+
+```bash
+pip install "mdengine[audio,api,mcp]"    # audio CLI + HTTP + MCP
+pip install "mdengine[video,api,mcp]"   # video CLI + HTTP + MCP (same ML stack as audio)
+```
+
+### Python library
+
+**Audio** — structured result + Markdown:
+
+```python
+from pathlib import Path
+from md_generator.media.audio import AudioToMarkdownService, AudioConverter
+
+svc = AudioToMarkdownService(whisper_model="base", language=None)
+text = svc.to_markdown(Path("input.mp3"), title="My title")
+svc.write_markdown(Path("input.mp3"), Path("out/transcript.md"))
+
+result = svc.transcribe(Path("input.wav"))  # metadata + segments + plain_text
+```
+
+**Video** — extract → transcribe (via audio) → Markdown:
+
+```python
+from pathlib import Path
+from md_generator.media.video import VideoToMarkdownService
+
+svc = VideoToMarkdownService(whisper_model="base")
+md = svc.to_markdown(Path("input.mp4"), title=None)
+svc.write_markdown(Path("input.mp4"), Path("out/transcript.md"))
+```
+
+Public symbols are also re-exported from [`md_generator.media`](src/md_generator/media/__init__.py) for ffprobe helpers (`ffprobe_json`, `VideoProbeResult`, …).
+
+### REST API (FastAPI)
+
+Each service exposes the same job pattern as other converters:
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /convert/sync` | Multipart field **`file`**; returns **Markdown** body. Query: `whisper_model`, `language`, `title`. |
+| `POST /convert/jobs` | Async upload; returns `{ "job_id", "status" }`. |
+| `GET /convert/jobs/{job_id}` | Status JSON. |
+| `GET /convert/jobs/{job_id}/download` | Markdown when `done`; workspace removed after download. |
+
+**Audio** defaults: `MD_AUDIO_MAX_UPLOAD_MB=200`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB=40`, `MD_AUDIO_API_PORT=8011`.  
+**Video** defaults: `MD_VIDEO_MAX_UPLOAD_MB=500`, `MD_VIDEO_MAX_SYNC_UPLOAD_MB=80`, `MD_VIDEO_API_PORT=8012`.
+
+Run with the bundled runners (each call builds the app with **`factory=True`** for a clean MCP session manager):
+
+```bash
+md-audio-api --host 127.0.0.1 --port 8011
+md-video-api --host 127.0.0.1 --port 8012
+```
+
+Or with Uvicorn directly (the ASGI app is built by **`create_app()`** so each worker gets its own MCP session manager):
+
+```bash
+uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
+uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
+```
+
+The module also defines **`app = create_app()`** for a single-process target: `uvicorn md_generator.media.audio.api.main:app` (no `--factory`).
+
+Swagger is at **`/docs`** when the app is running.
+
+### MCP (stdio, SSE, streamable HTTP)
+
+1. **With FastAPI** — start `md-audio-api` or `md-video-api`; mount Streamable HTTP MCP at **`http://<host>:<port>/mcp`** (same host as REST).
+2. **Standalone** — process speaks MCP only:
+
+```bash
+md-audio-mcp --transport stdio
+md-audio-mcp --transport sse
+md-audio-mcp --transport streamable-http
+md-video-mcp --transport stdio
+```
+
+**Audio MCP tools:** `transcribe_audio_path`, `transcribe_audio_base64`.  
+**Video MCP tools:** `transcribe_video_path`, `transcribe_video_base64`.
+
+Equivalent modules: `python -m md_generator.media.audio.api.mcp_server`, `python -m md_generator.media.video.api.mcp_server`.
+
+### Thin shims (repo clone)
+
+[`audio-to-md/converter.py`](audio-to-md/converter.py) and [`video-to-md/converter.py`](video-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video`. Tests and `pytest.ini` live under `audio-to-md/tests/` and `video-to-md/tests/`.
+
+---
+
 ## HTTP API (FastAPI)
 
 All format APIs follow a similar pattern:
@@ -335,6 +447,8 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | Text/JSON/XML | `md_generator.text.api.main:app` | `text`, `api`, `mcp` |
 | ZIP | `md_generator.archive.api.main:app` | `archive`, `api`, `mcp` (+ extras for nested office/PDF) |
 | URL / HTML | `md_generator.url.api.main:app` | `url`, `api`, `mcp` |
+| Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (use **`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
+| Video (Whisper) | `md_generator.media.video.api.main:create_app` (use **`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
 
 Examples:
 
@@ -343,6 +457,8 @@ uvicorn md_generator.pdf.api.main:app --host 127.0.0.1 --port 8001
 uvicorn md_generator.word.api.main:app --host 127.0.0.1 --port 8002
 uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8010
 uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8011
+uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
+uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
 ```
 
 ### MCP over HTTP on the same server
@@ -362,6 +478,8 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | Text | `TXT_JSON_XML_TO_MD_` | same pattern |
 | XLSX | `XLSX_TO_MD_` | `XLSX_TO_MD_TEMP_DIR`, `XLSX_TO_MD_CORS_ORIGINS`, etc. (see `md_generator.xlsx.api.app`) |
 | URL | `URL_TO_MD_` | `URL_TO_MD_MAX_SYNC_URLS`, `URL_TO_MD_MAX_SYNC_CRAWL_PAGES`, `URL_TO_MD_MAX_JOB_URLS`, `URL_TO_MD_JOB_TTL_SECONDS`, `URL_TO_MD_TEMP_DIR`, `URL_TO_MD_CORS_ORIGINS` |
+| Audio API | `MD_AUDIO_` | `MD_AUDIO_MAX_UPLOAD_MB`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB`, `MD_AUDIO_JOB_TTL_SECONDS`, `MD_AUDIO_TEMP_DIR`, `MD_AUDIO_CORS_ORIGINS`, `MD_AUDIO_API_HOST`, `MD_AUDIO_API_PORT` |
+| Video API | `MD_VIDEO_` | Same pattern as audio with `MD_VIDEO_*` (defaults: larger upload/sync caps, port **8012**) |
 
 Exact variable names match the `ApiSettings` / helper functions in each `api/settings` or `api/app` module.
 
@@ -385,6 +503,8 @@ Two usage patterns:
 | PPTX | `python -m md_generator.ppt.api.mcp_server` (see module docstring for flags) |
 | Image | `python -m md_generator.image.api.mcp_server` (see module for CLI) |
 | URL / HTML | `python -m md_generator.url.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
+| Audio | `md-audio-mcp` or `python -m md_generator.media.audio.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
+| Video | `md-video-mcp` or `python -m md_generator.media.video.api.mcp_server` — same transports |
 
 **Word** and **XLSX** also ship a small runner script in the repo:
 
@@ -419,7 +539,7 @@ Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/test
 |------|------|
 | `LICENSE` | MIT license text |
 | `CODE_OF_CONDUCT.md` | [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 |
-| `src/md_generator/` | **Library source** (all formats + `api` subpackages) |
+| `src/md_generator/` | **Library source** (all formats + `api` subpackages); **audio/video** under [`media/audio/`](src/md_generator/media/audio/) and [`media/video/`](src/md_generator/media/video/) |
 | `pyproject.toml` | Packaging, extras, CLI entry points, pytest |
 | `*-to-md/` | **Docs, tests, fixtures**, thin `converter.py` shims, some `run.py` helpers |
 | `README.md` | This document |

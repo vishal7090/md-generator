@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdengine"
-version = "0.2.2"
-description = "Convert PDF, Office, images, text/JSON/XML, ZIP archives, and web URLs to Markdown."
+version = "0.3.0"
+description = "Convert PDF, Office, images, audio, video, text/JSON/XML, ZIP archives, and web URLs to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -72,6 +72,10 @@ url-full = [
   "openpyxl>=3.1.0",
   "pytesseract>=0.3.10",
 ]
+# Whisper + PyTorch; metadata uses ffprobe when available, else ``ffmpeg -i`` (see imageio-ffmpeg).
+audio = ["openai-whisper>=20231117", "imageio-ffmpeg>=0.5.1"]
+# Same ML stack as audio; ships a bundled ``ffmpeg`` binary when the system has none.
+video = ["openai-whisper>=20231117", "imageio-ffmpeg>=0.5.1"]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -128,6 +132,12 @@ md-image = "md_generator.image.converter:main"
 md-text = "md_generator.text.converter:main"
 md-zip = "md_generator.archive.converter:main"
 md-url = "md_generator.url.converter:main"
+md-audio = "md_generator.media.audio.converter:main"
+md-video = "md_generator.media.video.converter:main"
+md-audio-api = "md_generator.media.audio.api.run:main"
+md-video-api = "md_generator.media.video.api.run:main"
+md-audio-mcp = "md_generator.media.audio.api.mcp_server:main"
+md-video-mcp = "md_generator.media.video.api.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -143,5 +153,7 @@ testpaths = [
   "txt-json-xml-to-md/tests",
   "zip-to-md/tests",
   "url-to-md/tests",
+  "audio-to-md/tests",
+  "video-to-md/tests",
 ]
 markers = ["integration: optional dependency or slower checks"]
