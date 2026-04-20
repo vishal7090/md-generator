@@ -468,6 +468,7 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | Text/JSON/XML | `md_generator.text.api.main:app` | `text`, `api`, `mcp` |
 | ZIP | `md_generator.archive.api.main:app` | `archive`, `api`, `mcp` (+ extras for nested office/PDF) |
 | URL / HTML | `md_generator.url.api.main:app` | `url`, `api`, `mcp` |
+| Playwright / SPA | `md_generator.playwright.api.main:app` | `playwright`, `api`, `mcp` |
 | Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (use **`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
 | Video (Whisper) | `md_generator.media.video.api.main:create_app` (use **`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
 | YouTube | `md_generator.media.youtube.api.main:create_app` (use **`--factory`**) or `…main:app` | `youtube`, `api`, `mcp` |
@@ -479,6 +480,7 @@ uvicorn md_generator.pdf.api.main:app --host 127.0.0.1 --port 8001
 uvicorn md_generator.word.api.main:app --host 127.0.0.1 --port 8002
 uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8010
 uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8011
+uvicorn md_generator.playwright.api.main:app --host 127.0.0.1 --port 8014
 uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
 uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
 uvicorn md_generator.media.youtube.api.main:create_app --factory --host 127.0.0.1 --port 8013
@@ -501,6 +503,7 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | Text | `TXT_JSON_XML_TO_MD_` | same pattern |
 | XLSX | `XLSX_TO_MD_` | `XLSX_TO_MD_TEMP_DIR`, `XLSX_TO_MD_CORS_ORIGINS`, etc. (see `md_generator.xlsx.api.app`) |
 | URL | `URL_TO_MD_` | `URL_TO_MD_MAX_SYNC_URLS`, `URL_TO_MD_MAX_SYNC_CRAWL_PAGES`, `URL_TO_MD_MAX_JOB_URLS`, `URL_TO_MD_JOB_TTL_SECONDS`, `URL_TO_MD_TEMP_DIR`, `URL_TO_MD_CORS_ORIGINS` |
+| Playwright / SPA | `PLAYWRIGHT_TO_MD_` | `PLAYWRIGHT_TO_MD_MAX_SYNC_URLS`, `PLAYWRIGHT_TO_MD_MAX_JOB_URLS`, `PLAYWRIGHT_TO_MD_JOB_TTL_SECONDS`, `PLAYWRIGHT_TO_MD_TEMP_DIR`, `PLAYWRIGHT_TO_MD_CORS_ORIGINS`, `PLAYWRIGHT_TO_MD_API_HOST`, `PLAYWRIGHT_TO_MD_API_PORT` (default **8014**) |
 | Audio API | `MD_AUDIO_` | `MD_AUDIO_MAX_UPLOAD_MB`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB`, `MD_AUDIO_JOB_TTL_SECONDS`, `MD_AUDIO_TEMP_DIR`, `MD_AUDIO_CORS_ORIGINS`, `MD_AUDIO_API_HOST`, `MD_AUDIO_API_PORT` |
 | Video API | `MD_VIDEO_` | Same pattern as audio with `MD_VIDEO_*` (defaults: larger upload/sync caps, port **8012**) |
 | YouTube API | `MD_YOUTUBE_` | `MD_YOUTUBE_JOB_TTL_SECONDS`, `MD_YOUTUBE_TEMP_DIR`, `MD_YOUTUBE_CORS_ORIGINS`, `MD_YOUTUBE_API_HOST`, `MD_YOUTUBE_API_PORT` (default **8013**); optional `MD_YOUTUBE_YTDLP` path for audio fallback |
@@ -527,6 +530,7 @@ Two usage patterns:
 | PPTX | `python -m md_generator.ppt.api.mcp_server` (see module docstring for flags) |
 | Image | `python -m md_generator.image.api.mcp_server` (see module for CLI) |
 | URL / HTML | `python -m md_generator.url.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
+| Playwright / SPA | `md-playwright-mcp` or `python -m md_generator.playwright.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
 | Audio | `md-audio-mcp` or `python -m md_generator.media.audio.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 | Video | `md-video-mcp` or `python -m md_generator.media.video.api.mcp_server` — same transports |
 | YouTube | `md-youtube-mcp` or `python -m md_generator.media.youtube.api.mcp_server` — same transports |

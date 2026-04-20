@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import zipfile
+from io import BytesIO
+
+import pytest
+
+pytest.importorskip("fastapi")
+
+from fastapi.testclient import TestClient
+
+from md_generator.playwright.api.main import app
+
+
+@pytest.fixture(scope="module")
+def api_client() -> TestClient:
+    """One TestClient for the module so MCP lifespan runs only once."""
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def fake_rendered_html(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(
+        url: str,
+        *,
+        wait_selector: str | None = None,
+        options=None,
+    ) -> str:
+        return """<!DOCTYPE html><html><head><title>T</title></head>
+        <body><h1>Heading</h1><p>Body</p></body></html>"""
+
+    monkeypatch.setattr(
+        "md_generator.playwright.playwright_fetcher.fetch_rendered_html",
+        fake_fetch,
+    )
+
+
+def test_convert_sync_zip(api_client: TestClient, fake_rendered_html: None) -> None:
+    r = api_client.post("/convert/sync", json={"url": "https://example.com/"})
+    assert r.status_code == 200, r.text
+    zf = zipfile.ZipFile(BytesIO(r.content))
+    names = zf.namelist()
+    assert "document.md" in names
+
+
+def test_sync_rejects_too_many_urls(api_client: TestClient) -> None:
+    r = api_client.post(
+        "/convert/sync",
+        json={
+            "urls": [
+                "https://a.com/1",
+                "https://a.com/2",
+                "https://a.com/3",
+                "https://a.com/4",
+            ],
+        },
+    )
+    assert r.status_code == 409
+
+
+def test_jobs_flow(api_client: TestClient, fake_rendered_html: None) -> None:
+    r = api_client.post("/convert/jobs", json={"url": "https://example.com/z"})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+    for _ in range(50):
+        st = api_client.get(f"/convert/jobs/{job_id}")
+        if st.json()["status"] == "done":
+            break
+    assert st.json()["status"] == "done"
+    dl = api_client.get(f"/convert/jobs/{job_id}/download")
+    assert dl.status_code == 200
+    zf = zipfile.ZipFile(BytesIO(dl.content))
+    assert "document.md" in zf.namelist()

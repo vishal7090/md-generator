@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "mdengine contributors" }]
-keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip", "url", "html", "youtube"]
+keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip", "url", "html", "youtube", "playwright"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -82,6 +82,16 @@ youtube = [
   "beautifulsoup4>=4.12.0",
   "lxml>=5.0.0",
 ]
+# Playwright-rendered SPA → Markdown (install browsers: playwright install chromium).
+playwright = [
+  "playwright>=1.49.0",
+  "httpx>=0.27.0",
+  "beautifulsoup4>=4.12.0",
+  "lxml>=5.0.0",
+  "markdownify>=0.14.0",
+  "readability-lxml>=0.8.1",
+  "Pillow>=10.0.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -99,6 +109,7 @@ dev = [
   "mdengine[api]",
   "mdengine[mcp]",
   "mdengine[url]",
+  "mdengine[playwright]",
 ]
 all = [
   "pymupdf>=1.24.0",
@@ -151,6 +162,9 @@ md-video-mcp = "md_generator.media.video.api.mcp_server:main"
 md-youtube = "md_generator.media.youtube.converter:main"
 md-youtube-api = "md_generator.media.youtube.api.run:main"
 md-youtube-mcp = "md_generator.media.youtube.api.mcp_server:main"
+md-playwright = "md_generator.playwright.cli:main"
+md-playwright-api = "md_generator.playwright.api.run:main"
+md-playwright-mcp = "md_generator.playwright.api.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -169,5 +183,6 @@ testpaths = [
   "audio-to-md/tests",
   "video-to-md/tests",
   "youtube-to-md/tests",
+  "playwright-to-md/tests",
 ]
 markers = ["integration: optional dependency or slower checks"]
