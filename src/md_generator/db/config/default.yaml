@@ -1,0 +1,35 @@
+database:
+  type: postgres
+  uri: postgresql://user:pass@localhost:5432/dbname
+  schema: public
+
+output:
+  path: ./docs
+  split_files: true
+
+features:
+  include:
+    - tables
+    - views
+    - indexes
+    - procedures
+    - functions
+    - triggers
+    - sequences
+    - partitions
+    - oracle_packages
+    - oracle_clusters
+    - mongodb_collections
+  exclude: []
+
+execution:
+  workers: 4
+
+limits:
+  max_tables: 10000
+  max_collections: 500
+  sample_size: 50
+
+erd:
+  max_tables: 100
+  scope: full
