@@ -18,6 +18,7 @@ from md_generator.db.core.markdown_writer import (
     format_trigger_markdown,
     format_view_markdown,
     slugify_segment,
+    ordered_combined_readme_paths,
     write_global_indexes,
     write_run_readme,
     write_text,
@@ -118,6 +119,7 @@ def extract_to_markdown(
     erd_artifact_paths: tuple[str, ...] = ()
     erd_note: str | None = None
     erd_engine: str | None = None
+    bundle_paths_written: list[str] = []
 
     try:
         if adapter.db_type == "mongo":
@@ -132,13 +134,23 @@ def extract_to_markdown(
                         write_text(p, body)
                         if on_file:
                             on_file(p)
+                        combined.append((c.name, body))
                     else:
                         combined.append((c.name, body))
                     _emit(on_progress, int(20 + 70 * (i + 1) / n), f"mongodb/collections/{c.name}")
-                if not cfg.split_files:
+                if cfg.split_files and cfg.write_combined_feature_markdown and combined:
                     _flush_combined(root, "mongodb/collections.md", combined, on_file=on_file)
+                    bundle_paths_written.append("mongodb/collections.md")
+                elif not cfg.split_files and combined:
+                    _flush_combined(root, "mongodb/collections.md", combined, on_file=on_file)
+                    bundle_paths_written.append("mongodb/collections.md")
             if "erd" in feats:
                 erd_note = "ER diagrams are not generated for MongoDB exports (no relational FK metadata)."
+            merge_paths = (
+                ordered_combined_readme_paths(bundle_paths_written)
+                if cfg.readme_feature_merge != "none"
+                else ()
+            )
             meta = RunMetadata(
                 db_type=adapter.db_type,
                 uri_display=redact_uri(cfg.uri),
@@ -149,6 +161,8 @@ def extract_to_markdown(
                 erd_artifacts=(),
                 erd_note=erd_note,
                 erd_engine=None,
+                readme_feature_merge=cfg.readme_feature_merge,
+                combined_readme_paths=merge_paths,
             )
             readme = write_run_readme(root, meta)
             if on_file:
@@ -183,18 +197,22 @@ def extract_to_markdown(
                     detail_by_key[key] = detail
                     t = futs[fut]
                     sort_key = f"{t.schema}.{t.name}" if t.schema else t.name
+                    table_parts.append((sort_key, md))
                     if cfg.split_files:
                         fname = slugify_segment(f"{t.schema}_{t.name}" if t.schema else t.name) + ".md"
                         p = root / "tables" / fname
                         write_text(p, md)
                         if on_file:
                             on_file(p)
-                    else:
-                        table_parts.append((sort_key, md))
                     done += 1
                     _emit(on_progress, int(5 + 40 * done / nt), f"tables/{sort_key}")
-            if not cfg.split_files:
+            if cfg.split_files:
+                if cfg.write_combined_feature_markdown and table_parts:
+                    _flush_combined(root, "tables.md", table_parts, on_file=on_file)
+                    bundle_paths_written.append("tables.md")
+            elif table_parts:
                 _flush_combined(root, "tables.md", table_parts, on_file=on_file)
+                bundle_paths_written.append("tables.md")
             ordered_table_details = []
             for t in tables_sorted:
                 k = f"{t.schema}.{t.name}" if t.schema else t.name
@@ -231,9 +249,19 @@ def extract_to_markdown(
             erd_note = "ERD skipped (enable the `tables` feature so foreign keys can be introspected)."
 
         if "indexes" in feats and per_table_indexes:
-            p = write_global_indexes(root, per_table_indexes)
+            p = write_global_indexes(
+                root,
+                per_table_indexes,
+                write_root_bundle=cfg.write_combined_feature_markdown,
+            )
             if on_file:
                 on_file(p)
+            if cfg.write_combined_feature_markdown:
+                ip = root / "indexes.md"
+                if ip.is_file():
+                    bundle_paths_written.append("indexes.md")
+                    if on_file:
+                        on_file(ip)
 
         def write_simple(subdir: str, name: str, body: str) -> Path:
             p = root / subdir / f"{slugify_segment(name)}.md"
@@ -246,12 +274,11 @@ def extract_to_markdown(
             for v in views:
                 body = format_view_markdown(v)
                 title = f"{v.schema}.{v.name}" if v.schema else v.name
+                vparts.append((title, body))
                 if cfg.split_files:
                     p = write_simple("views", title, body)
                     if on_file:
                         on_file(p)
-                else:
-                    vparts.append((title, body))
             if cfg.split_files and views:
                 _remove_stale_split_readme(root, "views")
             scope = _scope_label(cfg)
@@ -266,8 +293,12 @@ def extract_to_markdown(
                         combined_filename="views.md",
                         on_file=on_file,
                     )
+                elif cfg.write_combined_feature_markdown and vparts:
+                    _flush_combined(root, "views.md", vparts, on_file=on_file)
+                    bundle_paths_written.append("views.md")
             elif vparts:
                 _flush_combined(root, "views.md", vparts, on_file=on_file)
+                bundle_paths_written.append("views.md")
             else:
                 _write_empty_feature_dir(
                     root,
@@ -285,12 +316,11 @@ def extract_to_markdown(
             for r in funcs:
                 title = f"{r.schema}.{r.name}" if r.schema else r.name
                 body = format_routine_markdown(r)
+                acc.append((title, body))
                 if cfg.split_files:
                     p = write_simple("functions", title, body)
                     if on_file:
                         on_file(p)
-                else:
-                    acc.append((title, body))
             if cfg.split_files and funcs:
                 _remove_stale_split_readme(root, "functions")
             scope = _scope_label(cfg)
@@ -305,8 +335,12 @@ def extract_to_markdown(
                         combined_filename="functions.md",
                         on_file=on_file,
                     )
+                elif cfg.write_combined_feature_markdown and acc:
+                    _flush_combined(root, "functions.md", acc, on_file=on_file)
+                    bundle_paths_written.append("functions.md")
             elif acc:
                 _flush_combined(root, "functions.md", acc, on_file=on_file)
+                bundle_paths_written.append("functions.md")
             else:
                 _write_empty_feature_dir(
                     root,
@@ -324,12 +358,11 @@ def extract_to_markdown(
             for r in procs:
                 title = f"{r.schema}.{r.name}" if r.schema else r.name
                 body = format_routine_markdown(r)
+                acc.append((title, body))
                 if cfg.split_files:
                     p = write_simple("procedures", title, body)
                     if on_file:
                         on_file(p)
-                else:
-                    acc.append((title, body))
             if cfg.split_files and procs:
                 _remove_stale_split_readme(root, "procedures")
             scope = _scope_label(cfg)
@@ -344,8 +377,12 @@ def extract_to_markdown(
                         combined_filename="procedures.md",
                         on_file=on_file,
                     )
+                elif cfg.write_combined_feature_markdown and acc:
+                    _flush_combined(root, "procedures.md", acc, on_file=on_file)
+                    bundle_paths_written.append("procedures.md")
             elif acc:
                 _flush_combined(root, "procedures.md", acc, on_file=on_file)
+                bundle_paths_written.append("procedures.md")
             else:
                 _write_empty_feature_dir(
                     root,
@@ -363,12 +400,11 @@ def extract_to_markdown(
             for tr in trigs:
                 title = f"{tr.schema}.{tr.name}" if tr.schema else tr.name
                 body = format_trigger_markdown(tr)
+                acc.append((title, body))
                 if cfg.split_files:
                     p = write_simple("triggers", title, body)
                     if on_file:
                         on_file(p)
-                else:
-                    acc.append((title, body))
             scope = _scope_label(cfg)
             if cfg.split_files:
                 if not trigs:
@@ -381,8 +417,12 @@ def extract_to_markdown(
                         combined_filename="triggers.md",
                         on_file=on_file,
                     )
+                elif cfg.write_combined_feature_markdown and acc:
+                    _flush_combined(root, "triggers.md", acc, on_file=on_file)
+                    bundle_paths_written.append("triggers.md")
             elif acc:
                 _flush_combined(root, "triggers.md", acc, on_file=on_file)
+                bundle_paths_written.append("triggers.md")
             else:
                 _write_empty_feature_dir(
                     root,
@@ -399,61 +439,82 @@ def extract_to_markdown(
             for s in adapter.get_sequences():
                 title = f"{s.schema}.{s.name}" if s.schema else s.name
                 body = format_sequence_markdown(s)
+                acc.append((title, body))
                 if cfg.split_files:
                     p = write_simple("sequences", title, body)
                     if on_file:
                         on_file(p)
-                else:
-                    acc.append((title, body))
-            if not cfg.split_files:
+            if cfg.split_files:
+                if cfg.write_combined_feature_markdown and acc:
+                    _flush_combined(root, "sequences.md", acc, on_file=on_file)
+                    bundle_paths_written.append("sequences.md")
+            elif acc:
                 _flush_combined(root, "sequences.md", acc, on_file=on_file)
+                bundle_paths_written.append("sequences.md")
 
         if "partitions" in feats:
             acc = []
             for part in adapter.get_partitions():
                 title = f"{part.schema}.{part.parent_table}.{part.name}"
                 body = format_partition_markdown(part)
+                acc.append((title, body))
                 if cfg.split_files:
                     path = write_simple("partitions", title, body)
                     if on_file:
                         on_file(path)
-                else:
-                    acc.append((title, body))
-            if not cfg.split_files:
+            if cfg.split_files:
+                if cfg.write_combined_feature_markdown and acc:
+                    _flush_combined(root, "partitions.md", acc, on_file=on_file)
+                    bundle_paths_written.append("partitions.md")
+            elif acc:
                 _flush_combined(root, "partitions.md", acc, on_file=on_file)
+                bundle_paths_written.append("partitions.md")
 
         if "oracle_packages" in feats:
             acc = []
             for pkg in adapter.get_packages():
                 title = f"{pkg.schema}.{pkg.name}"
                 body = format_package_markdown(pkg)
+                acc.append((title, body))
                 if cfg.split_files:
                     path = write_simple("oracle/packages", title, body)
                     if on_file:
                         on_file(path)
-                else:
-                    acc.append((title, body))
-            if not cfg.split_files:
+            if cfg.split_files:
+                if cfg.write_combined_feature_markdown and acc:
+                    _flush_combined(root, "oracle/packages.md", acc, on_file=on_file)
+                    bundle_paths_written.append("oracle/packages.md")
+            elif acc:
                 _flush_combined(root, "oracle/packages.md", acc, on_file=on_file)
+                bundle_paths_written.append("oracle/packages.md")
 
         if "oracle_clusters" in feats:
             acc = []
             for c in adapter.get_clusters():
                 title = f"{c.schema}.{c.name}"
                 body = format_cluster_markdown(c)
+                acc.append((title, body))
                 if cfg.split_files:
                     path = write_simple("oracle/clusters", title, body)
                     if on_file:
                         on_file(path)
-                else:
-                    acc.append((title, body))
-            if not cfg.split_files:
+            if cfg.split_files:
+                if cfg.write_combined_feature_markdown and acc:
+                    _flush_combined(root, "oracle/clusters.md", acc, on_file=on_file)
+                    bundle_paths_written.append("oracle/clusters.md")
+            elif acc:
                 _flush_combined(root, "oracle/clusters.md", acc, on_file=on_file)
+                bundle_paths_written.append("oracle/clusters.md")
 
     finally:
         adapter.close()
 
     if adapter.db_type != "mongo":
+        merge_paths = (
+            ordered_combined_readme_paths(bundle_paths_written)
+            if cfg.readme_feature_merge != "none"
+            else ()
+        )
         meta = RunMetadata(
             db_type=adapter.db_type,
             uri_display=redact_uri(cfg.uri),
@@ -464,6 +525,8 @@ def extract_to_markdown(
             erd_artifacts=erd_artifact_paths,
             erd_note=erd_note,
             erd_engine=erd_engine,
+            readme_feature_merge=cfg.readme_feature_merge,
+            combined_readme_paths=merge_paths,
         )
         readme = write_run_readme(root, meta)
         if on_file:

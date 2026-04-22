@@ -41,6 +41,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ERD: full | per_schema | per_table",
     )
+    p.add_argument(
+        "--write-combined-feature-markdown",
+        choices=("true", "false"),
+        default=None,
+        help="When split_files, also write root tables.md, views.md, … bundles",
+    )
+    p.add_argument(
+        "--readme-feature-merge",
+        choices=("none", "inline", "toc"),
+        default=None,
+        help="Append combined bundle docs to README: none | inline | toc",
+    )
     return p
 
 
@@ -74,6 +86,10 @@ def _apply_cli_overrides(cfg: RunConfig, ns: argparse.Namespace) -> RunConfig:
         kw["exclude"] = exc
     if ns.split_files is not None:
         kw["split_files"] = ns.split_files == "true"
+    if getattr(ns, "write_combined_feature_markdown", None) is not None:
+        kw["write_combined_feature_markdown"] = ns.write_combined_feature_markdown == "true"
+    if getattr(ns, "readme_feature_merge", None) is not None:
+        kw["readme_feature_merge"] = ns.readme_feature_merge
     if ns.erd_max_tables is not None or ns.erd_scope is not None:
         ec = cfg.erd
         kw["erd"] = ErdConfig(
@@ -102,6 +118,12 @@ def main(argv: list[str] | None = None) -> int:
         overrides.setdefault("output", {})["path"] = str(ns.output)
     if ns.split_files is not None:
         overrides.setdefault("output", {})["split_files"] = ns.split_files == "true"
+    if getattr(ns, "write_combined_feature_markdown", None) is not None:
+        overrides.setdefault("output", {})["write_combined_feature_markdown"] = (
+            ns.write_combined_feature_markdown == "true"
+        )
+    if getattr(ns, "readme_feature_merge", None) is not None:
+        overrides.setdefault("output", {})["readme_feature_merge"] = ns.readme_feature_merge
     if ns.workers is not None:
         overrides.setdefault("execution", {})["workers"] = ns.workers
     if getattr(ns, "erd_max_tables", None) is not None:

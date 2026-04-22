@@ -10,6 +10,7 @@ import yaml
 from md_generator.db.core.models import FEATURES
 
 ALLOWED_ERD_SCOPES = frozenset({"full", "per_schema", "per_table"})
+ALLOWED_README_FEATURE_MERGE = frozenset({"none", "inline", "toc"})
 
 
 @dataclass
@@ -40,6 +41,8 @@ class RunConfig:
     workers: int = 4
     limits: dict[str, Any] = field(default_factory=dict)
     erd: ErdConfig = field(default_factory=ErdConfig)
+    write_combined_feature_markdown: bool = False
+    readme_feature_merge: str = "none"  # none | inline | toc
 
     def with_output(self, path: Path) -> RunConfig:
         return replace(self, output_path=path)
@@ -104,6 +107,14 @@ def load_run_config(path: Path | None, overrides: dict[str, Any] | None = None) 
         scope=str(erd_merged.get("scope", "full")),
     ).normalized()
 
+    split_files = bool(out.get("split_files", True))
+    write_combined = bool(out.get("write_combined_feature_markdown", False))
+    readme_merge = str(out.get("readme_feature_merge", "none")).lower().strip()
+    if readme_merge not in ALLOWED_README_FEATURE_MERGE:
+        readme_merge = "none"
+    if readme_merge != "none" and split_files:
+        write_combined = True
+
     inc = feats.get("include")
     if not inc:
         include_set = frozenset(FEATURES)
@@ -118,7 +129,9 @@ def load_run_config(path: Path | None, overrides: dict[str, Any] | None = None) 
         schema=db.get("schema"),
         database=db.get("database"),
         output_path=Path(out.get("path", "./docs")),
-        split_files=bool(out.get("split_files", True)),
+        split_files=split_files,
+        write_combined_feature_markdown=write_combined,
+        readme_feature_merge=readme_merge,
         include=include_set,
         exclude=exclude_set,
         workers=int(exe.get("workers", 4)),

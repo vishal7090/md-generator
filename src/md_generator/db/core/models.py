@@ -159,3 +159,5 @@ class RunMetadata:
     erd_artifacts: tuple[str, ...] = ()
     erd_note: str | None = None
     erd_engine: str | None = None  # graphviz | mermaid_py | mermaid_text
+    readme_feature_merge: str = "none"  # none | inline | toc
+    combined_readme_paths: tuple[str, ...] = ()

@@ -19,6 +19,8 @@ class DatabaseSection(BaseModel):
 class OutputSection(BaseModel):
     path: str = "./docs"
     split_files: bool = True
+    write_combined_feature_markdown: bool = False
+    readme_feature_merge: Literal["none", "inline", "toc"] = "none"
 
 
 class FeaturesSection(BaseModel):
@@ -59,6 +61,10 @@ class DbToMdRunBody(BaseModel):
 
     def to_run_config(self) -> RunConfig:
         inc = frozenset(self.features.include) if self.features.include else frozenset(FEATURES)
+        merge = self.output.readme_feature_merge
+        write_combined = self.output.write_combined_feature_markdown
+        if merge != "none" and self.output.split_files:
+            write_combined = True
         return RunConfig(
             db_type=self.database.type,
             uri=self.database.uri,
@@ -66,6 +72,8 @@ class DbToMdRunBody(BaseModel):
             database=self.database.database,
             output_path=Path(self.output.path),
             split_files=self.output.split_files,
+            write_combined_feature_markdown=write_combined,
+            readme_feature_merge=merge,
             include=inc,
             exclude=frozenset(self.features.exclude),
             workers=self.execution.workers,

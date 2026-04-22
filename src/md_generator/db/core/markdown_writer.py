@@ -227,7 +227,73 @@ def format_empty_feature_section(feature_label: str, scope: str | None) -> str:
     return f"# {feature_label}\n\n_No {feature_label.lower()} found in {loc}._\n"
 
 
-def format_run_readme(meta: RunMetadata) -> str:
+COMBINED_BUNDLE_ORDER: tuple[str, ...] = (
+    "tables.md",
+    "indexes.md",
+    "views.md",
+    "functions.md",
+    "procedures.md",
+    "triggers.md",
+    "sequences.md",
+    "partitions.md",
+    "oracle/packages.md",
+    "oracle/clusters.md",
+    "mongodb/collections.md",
+)
+
+
+def ordered_combined_readme_paths(logged: Iterable[str]) -> tuple[str, ...]:
+    s = set(logged)
+    return tuple(p for p in COMBINED_BUNDLE_ORDER if p in s)
+
+
+def _bundle_heading_for_path(rel_path: str) -> str:
+    """Section title for a combined bundle file (``tables.md``, ``oracle/packages.md``, …)."""
+    key = rel_path.removesuffix(".md")
+    known = {
+        "tables": "Tables (combined)",
+        "indexes": "Indexes (combined)",
+        "views": "Views (combined)",
+        "functions": "Functions (combined)",
+        "procedures": "Stored procedures (combined)",
+        "triggers": "Triggers (combined)",
+        "sequences": "Sequences (combined)",
+        "partitions": "Partitions (combined)",
+        "oracle/packages": "Oracle packages (combined)",
+        "oracle/clusters": "Oracle clusters (combined)",
+        "mongodb/collections": "MongoDB collections (combined)",
+    }
+    if key in known:
+        return known[key]
+    return key.replace("/", " — ").replace("_", " ").title() + " (combined)"
+
+
+def _append_readme_bundle_sections(
+    lines: list[str],
+    meta: RunMetadata,
+    output_root: Path,
+) -> None:
+    mode = (meta.readme_feature_merge or "none").lower()
+    if mode not in ("inline", "toc") or not meta.combined_readme_paths:
+        return
+    if mode == "toc":
+        lines.append("## Combined documentation\n\n")
+        for rel in meta.combined_readme_paths:
+            lines.append(f"- [`{rel}`]({rel})\n")
+        lines.append("\n")
+        return
+    lines.append("## Combined documentation\n\n")
+    for rel in meta.combined_readme_paths:
+        p = output_root / rel
+        if not p.is_file():
+            continue
+        title = _bundle_heading_for_path(rel)
+        lines.append(f"### {title}\n\n")
+        lines.append(p.read_text(encoding="utf-8").strip())
+        lines.append("\n\n---\n\n")
+
+
+def format_run_readme(meta: RunMetadata, output_root: Path | None = None) -> str:
     feats = ", ".join(meta.included_features) if meta.included_features else "(none)"
     limits = json.dumps(meta.limits, sort_keys=True, indent=2)
     lines = [
@@ -289,10 +355,15 @@ def format_run_readme(meta: RunMetadata) -> str:
                 for p in sorted(set(mmd)):
                     lines.append(f"- [`{p}`]({p})\n")
             lines.append("\n")
+    if output_root is not None:
+        _append_readme_bundle_sections(lines, meta, output_root)
+    layout_note = "See subdirectories for modular Markdown per object type."
+    if meta.combined_readme_paths:
+        layout_note += " Root-level `*.md` files aggregate each feature where enabled."
     lines.extend(
         [
             "## Layout\n",
-            "See subdirectories for modular Markdown per object type.\n",
+            f"{layout_note}\n",
         ]
     )
     return "".join(lines)
@@ -305,7 +376,7 @@ def write_text(path: Path, content: str) -> None:
 
 def write_run_readme(output_root: Path, meta: RunMetadata) -> Path:
     p = output_root / "README.md"
-    write_text(p, format_run_readme(meta))
+    write_text(p, format_run_readme(meta, output_root=output_root.resolve()))
     return p
 
 
@@ -344,7 +415,15 @@ def _global_indexes_md(indexes: Iterable[tuple[str, tuple[IndexInfo, ...]]]) -> 
     return "\n".join(lines) + "\n"
 
 
-def write_global_indexes(output_root: Path, per_table: dict[str, tuple[IndexInfo, ...]]) -> Path:
+def write_global_indexes(
+    output_root: Path,
+    per_table: dict[str, tuple[IndexInfo, ...]],
+    *,
+    write_root_bundle: bool = False,
+) -> Path:
+    body = _global_indexes_md(list(per_table.items()))
     p = output_root / "indexes" / "README.md"
-    write_text(p, _global_indexes_md(list(per_table.items())))
+    write_text(p, body)
+    if write_root_bundle:
+        write_text(output_root / "indexes.md", body)
     return p
