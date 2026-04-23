@@ -92,7 +92,7 @@ All converters can be run from a terminal after you install the package (with th
 ### 1. Install (once)
 
 ```bash
-pip install "mdengine[pdf,word]"          # adjust extras: ppt, xlsx, image, archive, text, …
+pip install "mdengine[pdf,word]"          # adjust extras: ppt, xlsx, image, archive, text, db, …
 # or from a clone:
 pip install -e ".[pdf,word,archive]"
 ```
@@ -127,6 +127,14 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-audio-mcp` | `md_generator.media.audio.api.mcp_server:main` | Standalone MCP (`--transport stdio` \| `sse` \| `streamable-http`) |
 | `md-video-mcp` | `md_generator.media.video.api.mcp_server:main` | Same for video |
 | `md-youtube-mcp` | `md_generator.media.youtube.api.mcp_server:main` | Same for YouTube (`youtube_url_to_markdown`) |
+| `md-db` | `md_generator.db.cli.main:main` | `pip install "mdengine[db]"` then `md-db --config db.yaml` (or `mdengine db-to-md …`) |
+| `md-db-api` | `md_generator.db.api.run:main` | FastAPI on port **8010** (`DB_TO_MD_PORT`): `POST /db-to-md/run`, `/db-to-md/job`, SSE `/db-to-md/job/{id}/events` |
+| `md-db-mcp` | `md_generator.db.api.mcp_server:main` | Standalone MCP for metadata export tools |
+| `mdengine` | `md_generator.engine_cli:main` | `mdengine db-to-md --uri …` (delegates to `md-db`) |
+
+**db-to-md ER diagrams:** add **`erd`** to the export feature list (YAML `features.include`, API body, or CLI `--include …,erd`). **Preferred:** **Graphviz** (`dot` on `PATH`, or **`GRAPHVIZ_DOT`**) produces `erd/*.dot`, `erd/*.png`, and `erd/*.svg`. **If Graphviz is missing,** the exporter falls back to **Mermaid** (`erDiagram`): it writes `erd/*.mermaid` plus a fenced **`erd/*.md`** for GitHub-style preview. With **`mermaid-py`** (included in `mdengine[db]`), it also requests **PNG/SVG** via mermaid.ink (requires network unless you self-host mermaid.ink and set **`MERMAID_INK_SERVER`** per [mermaid-py](https://pypi.org/project/mermaid-py/)). Tune **`erd.max_tables`** (default 100) and **`erd.scope`** (`full` \| `per_schema` \| `per_table`) under `erd:` in YAML; CLI: `--erd-max-tables`, `--erd-scope`. Async job SSE uses `progress_update` with `current` starting with `erd:`.
+
+**db-to-md split exports and README merge:** with **`output.split_files: true`**, set **`output.write_combined_feature_markdown: true`** to also write root-level combined Markdown (for example `tables.md`, `functions.md`, `indexes.md`, and feature-specific paths such as `oracle/packages.md` or `mongodb/collections.md` when those features run). Set **`output.readme_feature_merge`** to **`inline`** (append full bundle bodies into `README.md`) or **`toc`** (append a linked list to those files). If merge is not **`none`** and split files are on, combined bundle writes are turned on automatically when loading config. CLI: `--write-combined-feature-markdown`, `--readme-feature-merge none|inline|toc`.
 
 Every command accepts **`-h` / `--help`** for full flags (artifact layout, OCR, ZIP options, etc.).
 
@@ -439,7 +447,7 @@ Equivalent modules: `python -m md_generator.media.audio.api.mcp_server`, `python
 
 ### Thin shims (repo clone)
 
-[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`.
+[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`. [`db-to-md/converter.py`](db-to-md/converter.py) delegates to `md-db`; tests live under `db-to-md/tests/`.
 
 ---
 
@@ -469,6 +477,7 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | ZIP | `md_generator.archive.api.main:app` | `archive`, `api`, `mcp` (+ extras for nested office/PDF) |
 | URL / HTML | `md_generator.url.api.main:app` | `url`, `api`, `mcp` |
 | Playwright / SPA | `md_generator.playwright.api.main:app` | `playwright`, `api`, `mcp` |
+| Database metadata | `md_generator.db.api.main:app` | `db`, `api`, `mcp` |
 | Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (use **`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
 | Video (Whisper) | `md_generator.media.video.api.main:create_app` (use **`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
 | YouTube | `md_generator.media.youtube.api.main:create_app` (use **`--factory`**) or `…main:app` | `youtube`, `api`, `mcp` |
@@ -504,6 +513,7 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | XLSX | `XLSX_TO_MD_` | `XLSX_TO_MD_TEMP_DIR`, `XLSX_TO_MD_CORS_ORIGINS`, etc. (see `md_generator.xlsx.api.app`) |
 | URL | `URL_TO_MD_` | `URL_TO_MD_MAX_SYNC_URLS`, `URL_TO_MD_MAX_SYNC_CRAWL_PAGES`, `URL_TO_MD_MAX_JOB_URLS`, `URL_TO_MD_JOB_TTL_SECONDS`, `URL_TO_MD_TEMP_DIR`, `URL_TO_MD_CORS_ORIGINS` |
 | Playwright / SPA | `PLAYWRIGHT_TO_MD_` | `PLAYWRIGHT_TO_MD_MAX_SYNC_URLS`, `PLAYWRIGHT_TO_MD_MAX_JOB_URLS`, `PLAYWRIGHT_TO_MD_JOB_TTL_SECONDS`, `PLAYWRIGHT_TO_MD_TEMP_DIR`, `PLAYWRIGHT_TO_MD_CORS_ORIGINS`, `PLAYWRIGHT_TO_MD_API_HOST`, `PLAYWRIGHT_TO_MD_API_PORT` (default **8014**) |
+| Database metadata | `DB_TO_MD_` | `DB_TO_MD_JOB_SQLITE_PATH`, `DB_TO_MD_JOB_WORKSPACE_ROOT`, `DB_TO_MD_CORS_ORIGINS`, `DB_TO_MD_MAX_SYNC_ZIP_MB`, `DB_TO_MD_HOST`, `DB_TO_MD_PORT` (default **8010**) |
 | Audio API | `MD_AUDIO_` | `MD_AUDIO_MAX_UPLOAD_MB`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB`, `MD_AUDIO_JOB_TTL_SECONDS`, `MD_AUDIO_TEMP_DIR`, `MD_AUDIO_CORS_ORIGINS`, `MD_AUDIO_API_HOST`, `MD_AUDIO_API_PORT` |
 | Video API | `MD_VIDEO_` | Same pattern as audio with `MD_VIDEO_*` (defaults: larger upload/sync caps, port **8012**) |
 | YouTube API | `MD_YOUTUBE_` | `MD_YOUTUBE_JOB_TTL_SECONDS`, `MD_YOUTUBE_TEMP_DIR`, `MD_YOUTUBE_CORS_ORIGINS`, `MD_YOUTUBE_API_HOST`, `MD_YOUTUBE_API_PORT` (default **8013**); optional `MD_YOUTUBE_YTDLP` path for audio fallback |
@@ -534,6 +544,7 @@ Two usage patterns:
 | Audio | `md-audio-mcp` or `python -m md_generator.media.audio.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 | Video | `md-video-mcp` or `python -m md_generator.media.video.api.mcp_server` — same transports |
 | YouTube | `md-youtube-mcp` or `python -m md_generator.media.youtube.api.mcp_server` — same transports |
+| Database metadata | `md-db-mcp` or `python -m md_generator.db.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 
 **Word** and **XLSX** also ship a small runner script in the repo:
 

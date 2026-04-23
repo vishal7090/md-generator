@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN useradd -m -u 1000 appuser
+
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+
+RUN pip install --no-cache-dir ".[db,api,mcp]"
+
+USER appuser
+
+EXPOSE 8010
+
+CMD ["python", "-m", "uvicorn", "md_generator.db.api.main:app", "--host", "0.0.0.0", "--port", "8010"]

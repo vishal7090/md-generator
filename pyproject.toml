@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdengine"
-version = "0.4.0"
+version = "0.5.0"
 description = "Convert PDF, Office, images, audio, video, text/JSON/XML, ZIP archives, and web URLs to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "mdengine contributors" }]
-keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip", "url", "html", "youtube", "playwright"]
+keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip", "url", "html", "youtube", "playwright", "database"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -92,6 +92,15 @@ playwright = [
   "readability-lxml>=0.8.1",
   "Pillow>=10.0.0",
 ]
+db = [
+  "sqlalchemy>=2.0.0",
+  "pyyaml>=6.0.0",
+  "psycopg2-binary>=2.9.9",
+  "pymysql>=1.1.0",
+  "oracledb>=2.0.0",
+  "pymongo>=4.6.0",
+  "mermaid-py>=0.8.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -110,6 +119,7 @@ dev = [
   "mdengine[mcp]",
   "mdengine[url]",
   "mdengine[playwright]",
+  "mdengine[db]",
 ]
 all = [
   "pymupdf>=1.24.0",
@@ -165,9 +175,16 @@ md-youtube-mcp = "md_generator.media.youtube.api.mcp_server:main"
 md-playwright = "md_generator.playwright.cli:main"
 md-playwright-api = "md_generator.playwright.api.run:main"
 md-playwright-mcp = "md_generator.playwright.api.mcp_server:main"
+md-db = "md_generator.db.cli.main:main"
+md-db-api = "md_generator.db.api.run:main"
+md-db-mcp = "md_generator.db.api.mcp_server:main"
+mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"md_generator.db.config" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -184,5 +201,6 @@ testpaths = [
   "video-to-md/tests",
   "youtube-to-md/tests",
   "playwright-to-md/tests",
+  "db-to-md/tests",
 ]
 markers = ["integration: optional dependency or slower checks"]
