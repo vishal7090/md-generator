@@ -101,6 +101,11 @@ db = [
   "pymongo>=4.6.0",
   "mermaid-py>=0.8.0",
 ]
+graph = [
+  "networkx>=3.2.0",
+  "neo4j>=5.14.0",
+  "pyyaml>=6.0.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -120,6 +125,7 @@ dev = [
   "mdengine[url]",
   "mdengine[playwright]",
   "mdengine[db]",
+  "mdengine[graph]",
 ]
 all = [
   "pymupdf>=1.24.0",
@@ -178,6 +184,9 @@ md-playwright-mcp = "md_generator.playwright.api.mcp_server:main"
 md-db = "md_generator.db.cli.main:main"
 md-db-api = "md_generator.db.api.run:main"
 md-db-mcp = "md_generator.db.api.mcp_server:main"
+md-graph = "md_generator.graph.cli.main:main"
+md-graph-api = "md_generator.graph.api.run:main"
+md-graph-mcp = "md_generator.graph.api.mcp_server:main"
 mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]
@@ -185,6 +194,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "md_generator.db.config" = ["*.yaml"]
+"md_generator.graph.config" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -202,5 +212,6 @@ testpaths = [
   "youtube-to-md/tests",
   "playwright-to-md/tests",
   "db-to-md/tests",
+  "graph-to-md/tests",
 ]
 markers = ["integration: optional dependency or slower checks"]
