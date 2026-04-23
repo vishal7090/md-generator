@@ -1,0 +1,30 @@
+graph:
+  source: networkx
+  uri: bolt://localhost:7687
+  database: neo4j
+  user: neo4j
+  password: password
+  graph_file: null
+  neo4j_id_mode: element_id
+  neo4j_page_size: 500
+  connection_timeout_s: 30.0
+  depth: 2
+  start_node: null
+  max_nodes: 10000
+  max_edges: 50000
+
+output:
+  path: ./docs
+  split_files: true
+  combine_markdown: true
+
+execution:
+  mode: async
+  workers: 4
+
+viz:
+  enabled: false
+  mermaid: true
+  formats:
+    - png
+    - svg

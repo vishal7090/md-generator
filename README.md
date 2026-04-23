@@ -1,6 +1,6 @@
 # mdengine
 
-Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoint (.pptx)**, **Excel (.xlsx/.xlsm)**, **images** (OCR), **plain text / JSON / XML**, **ZIP archives**, and **audio / video** (Whisper transcription → Markdown) into **Markdown** (and related assets). Install only the extras you need; everything imports under the **`md_generator`** package.
+Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoint (.pptx)**, **Excel (.xlsx/.xlsm)**, **images** (OCR), **plain text / JSON / XML**, **ZIP archives**, **audio / video** (Whisper transcription → Markdown), **database metadata** (SQL + Mongo), and **graphs** (Neo4j / NetworkX → Markdown) into **Markdown** (and related assets). Install only the extras you need; everything imports under the **`md_generator`** package.
 
 - **PyPI name:** `mdengine` (import package: `md_generator`)
 - **Source:** [github.com/vishal7090/md-generator](https://github.com/vishal7090/md-generator)
@@ -78,6 +78,7 @@ pip install "mdengine[all]"
 | `video` | **Video → Markdown** (ffmpeg extracts mono 16 kHz WAV, then same Whisper stack as `audio`) |
 | `api` | FastAPI, uvicorn, httpx, pydantic-settings |
 | `mcp` | MCP servers (`mcp`, `fastmcp` where used) |
+| `graph` | **Graph → Markdown** (Neo4j Bolt + NetworkX GraphML/GML): `networkx`, `neo4j`, `pyyaml` |
 | `dev` | pytest + API/MCP test helpers |
 | `all` | Large superset of dependencies (use only if you need everything) |
 
@@ -92,7 +93,7 @@ All converters can be run from a terminal after you install the package (with th
 ### 1. Install (once)
 
 ```bash
-pip install "mdengine[pdf,word]"          # adjust extras: ppt, xlsx, image, archive, text, db, …
+pip install "mdengine[pdf,word]"          # adjust extras: ppt, xlsx, image, archive, text, db, graph, …
 # or from a clone:
 pip install -e ".[pdf,word,archive]"
 ```
@@ -130,11 +131,16 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-db` | `md_generator.db.cli.main:main` | `pip install "mdengine[db]"` then `md-db --config db.yaml` (or `mdengine db-to-md …`) |
 | `md-db-api` | `md_generator.db.api.run:main` | FastAPI on port **8010** (`DB_TO_MD_PORT`): `POST /db-to-md/run`, `/db-to-md/job`, SSE `/db-to-md/job/{id}/events` |
 | `md-db-mcp` | `md_generator.db.api.mcp_server:main` | Standalone MCP for metadata export tools |
-| `mdengine` | `md_generator.engine_cli:main` | `mdengine db-to-md --uri …` (delegates to `md-db`) |
+| `md-graph` | `md_generator.graph.cli.main:main` | `pip install "mdengine[graph]"` then `md-graph --source neo4j --uri bolt://…` (or `mdengine graph-to-md …`) |
+| `md-graph-api` | `md_generator.graph.api.run:main` | FastAPI on port **8012** (`GRAPH_TO_MD_PORT`): `POST /graph-to-md/run`, `/graph-to-md/job`, SSE `/graph-to-md/job/{id}/events` |
+| `md-graph-mcp` | `md_generator.graph.api.mcp_server:main` | Standalone MCP for graph export tools |
+| `mdengine` | `md_generator.engine_cli:main` | `mdengine db-to-md …` / `mdengine graph-to-md …` (delegates to `md-db` / `md-graph`) |
 
 **db-to-md ER diagrams:** add **`erd`** to the export feature list (YAML `features.include`, API body, or CLI `--include …,erd`). **Preferred:** **Graphviz** (`dot` on `PATH`, or **`GRAPHVIZ_DOT`**) produces `erd/*.dot`, `erd/*.png`, and `erd/*.svg`. **If Graphviz is missing,** the exporter falls back to **Mermaid** (`erDiagram`): it writes `erd/*.mermaid` plus a fenced **`erd/*.md`** for GitHub-style preview. With **`mermaid-py`** (included in `mdengine[db]`), it also requests **PNG/SVG** via mermaid.ink (requires network unless you self-host mermaid.ink and set **`MERMAID_INK_SERVER`** per [mermaid-py](https://pypi.org/project/mermaid-py/)). Tune **`erd.max_tables`** (default 100) and **`erd.scope`** (`full` \| `per_schema` \| `per_table`) under `erd:` in YAML; CLI: `--erd-max-tables`, `--erd-scope`. Async job SSE uses `progress_update` with `current` starting with `erd:`.
 
 **db-to-md split exports and README merge:** with **`output.split_files: true`**, set **`output.write_combined_feature_markdown: true`** to also write root-level combined Markdown (for example `tables.md`, `functions.md`, `indexes.md`, and feature-specific paths such as `oracle/packages.md` or `mongodb/collections.md` when those features run). Set **`output.readme_feature_merge`** to **`inline`** (append full bundle bodies into `README.md`) or **`toc`** (append a linked list to those files). If merge is not **`none`** and split files are on, combined bundle writes are turned on automatically when loading config. CLI: `--write-combined-feature-markdown`, `--readme-feature-merge none|inline|toc`.
+
+**graph-to-md (Neo4j + NetworkX):** library lives under [`md_generator/graph/`](src/md_generator/graph/). **Sources:** **`networkx`** (GraphML/GML via `graph.graph_file` or `--graph-file`) or **`neo4j`** (`graph.uri`, `graph.user`, `graph.password`, optional `graph.database` for `session(database=…)`). **Output layout:** by default **`output.combine_markdown: true`** writes **`nodes.md`**, **`relationship.md`**, and **`graph_summary.md`** (summary plus embedded nodes and relationships). Set **`combine_markdown: false`** or CLI **`--individual` / `--markdown-layout individual`** for per-entity files under **`nodes/`** and **`relationships/`**. **Diagrams:** **`viz.mermaid: true`** (default) writes **`graph/graph.mmd`** and embeds a fenced Mermaid block in the export **`README.md`** (no Graphviz required). **`viz.enabled: true`** or CLI **`--viz`** also writes **`graph/graph.dot`** and runs **`dot`** for PNG/SVG/PDF when Graphviz is on `PATH` (or **`GRAPHVIZ_DOT`**). CLI **`--no-mermaid`** disables Mermaid; **`--depth`**, **`--start-node`**, **`--max-nodes`**, **`--max-edges`** bound traversal. Packaged defaults: [`src/md_generator/graph/config/default.yaml`](src/md_generator/graph/config/default.yaml). Tests: **`graph-to-md/tests/`**; API image: [`graph-to-md/Dockerfile.api`](graph-to-md/Dockerfile.api).
 
 Every command accepts **`-h` / `--help`** for full flags (artifact layout, OCR, ZIP options, etc.).
 
@@ -154,6 +160,7 @@ md-zip archive.zip ./unzipped-md
 md-url https://example.com/page ./page-bundle --artifact-layout
 md-audio ./voice.mp3 ./voice.md --model tiny
 md-video ./screen.mp4 ./screen.md --model base
+pip install "mdengine[graph]" && md-graph --source neo4j --uri neo4j://localhost:7687 --user neo4j --password secret --database neo4j --output ./graph-out --viz
 ```
 
 **Windows PowerShell** (same commands; use backslashes for paths if you prefer)
@@ -164,6 +171,8 @@ md-zip .\archive.zip .\zip-out
 md-url https://example.com/page .\page-bundle --artifact-layout
 md-audio .\voice.mp3 .\voice.md --model tiny
 md-video .\screen.mp4 .\screen.md --model base
+pip install "mdengine[graph]"
+md-graph --source neo4j --uri neo4j://localhost:7687 --user neo4j --password secret --database neo4j --output .\graph-out --viz
 ```
 
 **Windows CMD**
@@ -447,7 +456,7 @@ Equivalent modules: `python -m md_generator.media.audio.api.mcp_server`, `python
 
 ### Thin shims (repo clone)
 
-[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`. [`db-to-md/converter.py`](db-to-md/converter.py) delegates to `md-db`; tests live under `db-to-md/tests/`.
+[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`. [`db-to-md/converter.py`](db-to-md/converter.py) delegates to `md-db`; tests live under `db-to-md/tests/`. **graph-to-md** uses `md-graph` / `mdengine graph-to-md` directly (no thin `converter.py` shim); tests live under [`graph-to-md/tests/`](graph-to-md/tests/).
 
 ---
 
@@ -478,6 +487,7 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | URL / HTML | `md_generator.url.api.main:app` | `url`, `api`, `mcp` |
 | Playwright / SPA | `md_generator.playwright.api.main:app` | `playwright`, `api`, `mcp` |
 | Database metadata | `md_generator.db.api.main:app` | `db`, `api`, `mcp` |
+| Graph metadata (Neo4j / NetworkX) | `md_generator.graph.api.main:app` | `graph`, `api`, `mcp` |
 | Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (use **`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
 | Video (Whisper) | `md_generator.media.video.api.main:create_app` (use **`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
 | YouTube | `md_generator.media.youtube.api.main:create_app` (use **`--factory`**) or `…main:app` | `youtube`, `api`, `mcp` |
@@ -490,10 +500,13 @@ uvicorn md_generator.word.api.main:app --host 127.0.0.1 --port 8002
 uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8010
 uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8011
 uvicorn md_generator.playwright.api.main:app --host 127.0.0.1 --port 8014
+uvicorn md_generator.graph.api.main:app --host 127.0.0.1 --port 8012
 uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
 uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
 uvicorn md_generator.media.youtube.api.main:create_app --factory --host 127.0.0.1 --port 8013
 ```
+
+**Port note:** **`md-graph-api`** and **`md-video-api`** both default to **8012**; set **`GRAPH_TO_MD_PORT`** or **`MD_VIDEO_API_PORT`** when you need both on one machine.
 
 ### MCP over HTTP on the same server
 
@@ -514,6 +527,7 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | URL | `URL_TO_MD_` | `URL_TO_MD_MAX_SYNC_URLS`, `URL_TO_MD_MAX_SYNC_CRAWL_PAGES`, `URL_TO_MD_MAX_JOB_URLS`, `URL_TO_MD_JOB_TTL_SECONDS`, `URL_TO_MD_TEMP_DIR`, `URL_TO_MD_CORS_ORIGINS` |
 | Playwright / SPA | `PLAYWRIGHT_TO_MD_` | `PLAYWRIGHT_TO_MD_MAX_SYNC_URLS`, `PLAYWRIGHT_TO_MD_MAX_JOB_URLS`, `PLAYWRIGHT_TO_MD_JOB_TTL_SECONDS`, `PLAYWRIGHT_TO_MD_TEMP_DIR`, `PLAYWRIGHT_TO_MD_CORS_ORIGINS`, `PLAYWRIGHT_TO_MD_API_HOST`, `PLAYWRIGHT_TO_MD_API_PORT` (default **8014**) |
 | Database metadata | `DB_TO_MD_` | `DB_TO_MD_JOB_SQLITE_PATH`, `DB_TO_MD_JOB_WORKSPACE_ROOT`, `DB_TO_MD_CORS_ORIGINS`, `DB_TO_MD_MAX_SYNC_ZIP_MB`, `DB_TO_MD_HOST`, `DB_TO_MD_PORT` (default **8010**) |
+| Graph metadata | `GRAPH_TO_MD_` | `GRAPH_TO_MD_JOB_SQLITE_PATH`, `GRAPH_TO_MD_JOB_WORKSPACE_ROOT`, `GRAPH_TO_MD_CORS_ORIGINS`, `GRAPH_TO_MD_MAX_SYNC_ZIP_MB`, `GRAPH_TO_MD_HOST`, `GRAPH_TO_MD_PORT` (default **8012**) |
 | Audio API | `MD_AUDIO_` | `MD_AUDIO_MAX_UPLOAD_MB`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB`, `MD_AUDIO_JOB_TTL_SECONDS`, `MD_AUDIO_TEMP_DIR`, `MD_AUDIO_CORS_ORIGINS`, `MD_AUDIO_API_HOST`, `MD_AUDIO_API_PORT` |
 | Video API | `MD_VIDEO_` | Same pattern as audio with `MD_VIDEO_*` (defaults: larger upload/sync caps, port **8012**) |
 | YouTube API | `MD_YOUTUBE_` | `MD_YOUTUBE_JOB_TTL_SECONDS`, `MD_YOUTUBE_TEMP_DIR`, `MD_YOUTUBE_CORS_ORIGINS`, `MD_YOUTUBE_API_HOST`, `MD_YOUTUBE_API_PORT` (default **8013**); optional `MD_YOUTUBE_YTDLP` path for audio fallback |
@@ -545,6 +559,7 @@ Two usage patterns:
 | Video | `md-video-mcp` or `python -m md_generator.media.video.api.mcp_server` — same transports |
 | YouTube | `md-youtube-mcp` or `python -m md_generator.media.youtube.api.mcp_server` — same transports |
 | Database metadata | `md-db-mcp` or `python -m md_generator.db.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
+| Graph (Neo4j / NetworkX) | `md-graph-mcp` or `python -m md_generator.graph.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 
 **Word** and **XLSX** also ship a small runner script in the repo:
 
@@ -569,7 +584,7 @@ pip install -e ".[dev,all]"   # or a smaller subset of extras
 python -m pytest
 ```
 
-Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`); `pyproject.toml` configures `pythonpath = ["src"]` so `md_generator` resolves without a separate `PYTHONPATH`.
+Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`) and **`graph-to-md/tests/`**; `pyproject.toml` configures `pythonpath = ["src"]` so `md_generator` resolves without a separate `PYTHONPATH`.
 
 ---
 
@@ -579,7 +594,7 @@ Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/test
 |------|------|
 | `LICENSE` | MIT license text |
 | `CODE_OF_CONDUCT.md` | [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 |
-| `src/md_generator/` | **Library source** (all formats + `api` subpackages); **audio/video** under [`media/audio/`](src/md_generator/media/audio/) and [`media/video/`](src/md_generator/media/video/) |
+| `src/md_generator/` | **Library source** (all formats + `api` subpackages); **audio/video** under [`media/audio/`](src/md_generator/media/audio/) and [`media/video/`](src/md_generator/media/video/); **graph-to-md** under [`graph/`](src/md_generator/graph/) |
 | `pyproject.toml` | Packaging, extras, CLI entry points, pytest |
 | `*-to-md/` | **Docs, tests, fixtures**, thin `converter.py` shims, some `run.py` helpers |
 | `README.md` | This document |
