@@ -19,7 +19,7 @@ def _parse_csv(s: str | None) -> frozenset[str] | None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Export database metadata to Markdown.")
     p.add_argument("--config", type=Path, default=None, help="Path to YAML config")
-    p.add_argument("--type", dest="db_type", default=None, help="postgres|mysql|oracle|mongo")
+    p.add_argument("--type", dest="db_type", default=None, help="postgres|mysql|oracle|mongo|sqlite")
     p.add_argument("--uri", default=None)
     p.add_argument("--output", type=Path, default=None)
     p.add_argument("--include", default=None, help="Comma-separated feature list")

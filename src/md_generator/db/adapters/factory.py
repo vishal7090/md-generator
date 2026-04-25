@@ -8,6 +8,7 @@ from md_generator.db.adapters.mongo_adapter import MongoAdapter
 from md_generator.db.adapters.mysql_adapter import MysqlAdapter
 from md_generator.db.adapters.oracle_adapter import OracleAdapter
 from md_generator.db.adapters.postgres_adapter import PostgresAdapter
+from md_generator.db.adapters.sqlite_adapter import SqliteAdapter
 from md_generator.db.core.base_adapter import BaseAdapter
 
 
@@ -37,4 +38,9 @@ def create_adapter(
         if not database:
             raise ValueError("MongoDB requires database name in config or --database")
         return MongoAdapter(uri, database, lim)
+    if t in ("sqlite",):
+        sch = (schema or "main").strip()
+        if sch.lower() == "public":
+            sch = "main"
+        return SqliteAdapter(uri, sch, lim)
     raise ValueError(f"Unsupported database type: {db_type!r}")

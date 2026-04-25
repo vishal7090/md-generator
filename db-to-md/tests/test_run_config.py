@@ -51,6 +51,24 @@ def test_default_erd_config_from_packaged_yaml() -> None:
     assert cfg.erd.scope == "full"
 
 
+def test_sqlite_schema_public_normalized_to_main(tmp_path: Path) -> None:
+    p = tmp_path / "s.yaml"
+    p.write_text(
+        """
+database:
+  type: sqlite
+  uri: sqlite:///./local.db
+  schema: public
+output:
+  path: ./out
+""",
+        encoding="utf-8",
+    )
+    cfg = load_run_config(p, None)
+    assert cfg.db_type == "sqlite"
+    assert cfg.schema == "main"
+
+
 def test_readme_merge_inline_auto_enables_combined_when_split(tmp_path: Path) -> None:
     p = tmp_path / "o.yaml"
     p.write_text(

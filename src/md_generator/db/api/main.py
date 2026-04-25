@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from pydantic import ValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
 from md_generator.db.api.schemas import DbToMdRunBody
 from md_generator.db.api.settings import DbApiSettings, cors_list, sqlite_path_resolved
+from md_generator.db.api.sqlite_upload import parse_sqlite_upload_config_json
 from md_generator.db.core.job_manager import JobManager
+from md_generator.db.core.util import is_sqlite_database_bytes, sqlite_uri_for_path
 from md_generator.db.core.zip_export import build_markdown_zip_bytes
 from md_generator.db.mcp.server import build_mcp_stack
 from md_generator.db.mcp.sse import format_sse
@@ -48,6 +52,90 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/db-to-md/run/sqlite")
+async def db_run_sqlite_upload(
+    request: Request,
+    file: UploadFile = File(..., description="SQLite .db / .sqlite file (SQLite format 3)"),
+    config: str | None = Form(None, description="Optional JSON object: schema, output, features, execution, limits, erd"),
+) -> Response:
+    """Sync export: upload a SQLite file, run db-to-md, return a ZIP (same limits as ``/db-to-md/run``)."""
+    import tempfile
+
+    settings: DbApiSettings = request.app.state.settings
+    max_upload = max(1, settings.max_sqlite_upload_mb) * 1024 * 1024
+    data = await file.read()
+    if len(data) > max_upload:
+        raise HTTPException(
+            status_code=413,
+            detail=f"SQLite upload exceeds DB_TO_MD_MAX_SQLITE_UPLOAD_MB ({settings.max_sqlite_upload_mb})",
+        )
+    if not is_sqlite_database_bytes(data):
+        raise HTTPException(
+            status_code=400,
+            detail="File is not a SQLite database (expected 'SQLite format 3' header)",
+        )
+    try:
+        opts = parse_sqlite_upload_config_json(config)
+    except (ValueError, ValidationError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            dbp = Path(td) / "upload.sqlite"
+            dbp.write_bytes(data)
+            uri = sqlite_uri_for_path(dbp)
+            cfg = opts.to_run_config(uri)
+            zip_data = build_markdown_zip_bytes(cfg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    max_b = settings.max_sync_zip_mb * 1024 * 1024
+    if len(zip_data) > max_b:
+        raise HTTPException(
+            status_code=413,
+            detail=f"ZIP exceeds DB_TO_MD_MAX_SYNC_ZIP_MB ({settings.max_sync_zip_mb}); use POST /db-to-md/job/sqlite",
+        )
+    return Response(
+        content=zip_data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="db-metadata.zip"'},
+    )
+
+
+@app.post("/db-to-md/job/sqlite")
+async def db_job_sqlite_upload(
+    request: Request,
+    file: UploadFile = File(..., description="SQLite .db / .sqlite file (SQLite format 3)"),
+    config: str | None = Form(None, description="Optional JSON object: schema, output, features, execution, limits, erd"),
+) -> dict[str, str]:
+    """Async job: save upload under the job workspace, run export, then ``GET …/download`` for the ZIP."""
+    settings: DbApiSettings = request.app.state.settings
+    jobs: JobManager = request.app.state.jobs
+    max_upload = max(1, settings.max_sqlite_upload_mb) * 1024 * 1024
+    data = await file.read()
+    if len(data) > max_upload:
+        raise HTTPException(
+            status_code=413,
+            detail=f"SQLite upload exceeds DB_TO_MD_MAX_SQLITE_UPLOAD_MB ({settings.max_sqlite_upload_mb})",
+        )
+    if not is_sqlite_database_bytes(data):
+        raise HTTPException(
+            status_code=400,
+            detail="File is not a SQLite database (expected 'SQLite format 3' header)",
+        )
+    try:
+        opts = parse_sqlite_upload_config_json(config)
+    except (ValueError, ValidationError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    cfg_template = opts.to_run_config("sqlite:///placeholder")
+    try:
+        rec = jobs.create_sqlite_file_job(data, cfg_template)
+        jobs.run_job_thread(rec.job_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"job_id": rec.job_id}
 
 
 @app.post("/db-to-md/run")

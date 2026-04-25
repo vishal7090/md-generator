@@ -119,6 +119,50 @@ class JobManager:
             self._conn.commit()
         return self.get(jid)  # type: ignore[return-value]
 
+    def create_sqlite_file_job(self, db_bytes: bytes, cfg_template: RunConfig) -> DbJobRecord:
+        """Create a job workspace, persist ``db_bytes`` as ``upload.sqlite``, then register the job.
+
+        The stored config uses a ``sqlite:///`` URI pointing at ``{workspace}/upload.sqlite`` so the
+        worker thread can open the uploaded file before zipping results.
+        """
+        jid = str(uuid.uuid4())
+        base = self._root or Path.cwd() / "db-md-jobs"
+        ws = (base / jid).resolve()
+        ws.mkdir(parents=True, exist_ok=True)
+        db_path = ws / "upload.sqlite"
+        db_path.write_bytes(db_bytes)
+        from md_generator.db.core.util import sqlite_uri_for_path
+
+        uri = sqlite_uri_for_path(db_path)
+        cfg = RunConfig(
+            db_type="sqlite",
+            uri=uri,
+            schema=cfg_template.schema if cfg_template.schema else "main",
+            database=cfg_template.database,
+            output_path=cfg_template.output_path,
+            split_files=cfg_template.split_files,
+            write_combined_feature_markdown=cfg_template.write_combined_feature_markdown,
+            readme_feature_merge=cfg_template.readme_feature_merge,
+            include=cfg_template.include,
+            exclude=cfg_template.exclude,
+            workers=cfg_template.workers,
+            limits=dict(cfg_template.limits),
+            erd=cfg_template.erd,
+        )
+        now = time.time()
+        cfg_dump = json.dumps(_config_to_jsonable(cfg), sort_keys=True)
+        assert self._conn is not None
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO jobs (job_id, status, progress, current, workspace, zip_path, error, created_at, updated_at, config_json)
+                VALUES (?, ?, 0, '', ?, NULL, NULL, ?, ?, ?)
+                """,
+                (jid, JobStatus.PENDING.value, str(ws), now, now, cfg_dump),
+            )
+            self._conn.commit()
+        return self.get(jid)  # type: ignore[return-value]
+
     def get(self, job_id: str) -> DbJobRecord | None:
         assert self._conn is not None
         with self._lock:
