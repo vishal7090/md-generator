@@ -4,7 +4,7 @@ Regenerate locally (deterministic, no LLM):
 
 ```bash
 pip install -e ".[openapi]"
-md-api generate --file openapi-to-md/examples/minimal_openapi.yaml --output ./api-md-out --formats md,html,mermaid
+md-openapi generate --file openapi-to-md/examples/minimal_openapi.yaml --output ./api-md-out --formats md,html,mermaid
 ```
 
 Typical directories and files:

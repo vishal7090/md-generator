@@ -1,4 +1,4 @@
-﻿"""Shim CLI: prefer ``md-api`` after ``pip install mdengine[openapi]``."""
+﻿"""Shim CLI: prefer ``md-openapi`` after ``pip install mdengine[openapi]``."""
 
 from __future__ import annotations
 

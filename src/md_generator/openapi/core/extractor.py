@@ -1,10 +1,11 @@
 ﻿from __future__ import annotations
 
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from md_generator.openapi.converters.swagger2_to_openapi3 import (
     convert_swagger2_to_openapi3,
@@ -27,6 +28,88 @@ logger = logging.getLogger(__name__)
 def _emit(on_progress: Callable[[int, str], None] | None, pct: int, cur: str) -> None:
     if on_progress:
         on_progress(pct, cur)
+
+
+def _stringify_mapping_keys(obj: Any) -> tuple[Any, bool]:
+    """Return (normalized_obj, changed) with all mapping keys coerced to strings."""
+    if isinstance(obj, dict):
+        changed = False
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            nk = k if isinstance(k, str) else str(k)
+            nv, ch = _stringify_mapping_keys(v)
+            if nk != k or ch:
+                changed = True
+            out[nk] = nv
+        return out, changed
+    if isinstance(obj, list):
+        changed = False
+        out_list: list[Any] = []
+        for v in obj:
+            nv, ch = _stringify_mapping_keys(v)
+            if ch:
+                changed = True
+            out_list.append(nv)
+        return out_list, changed
+    return obj, False
+
+
+def _collect_path_tokens(path_key: str) -> set[str]:
+    return {m.group(1) for m in re.finditer(r"\{([^}]+)\}", path_key)}
+
+
+def _resolve_parameter_candidate(param: Any, component_parameters: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(param, dict):
+        return None
+    ref = param.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/components/parameters/"):
+        key = ref.split("/")[-1]
+        resolved = component_parameters.get(key)
+        return resolved if isinstance(resolved, dict) else None
+    return param
+
+
+def _prune_invalid_openapi_path_parameters(doc: dict[str, Any]) -> bool:
+    """Drop path parameters whose names are not present in the corresponding path template."""
+    methods = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+    paths = doc.get("paths")
+    if not isinstance(paths, dict):
+        return False
+    component_parameters = ((doc.get("components") or {}).get("parameters") or {})
+    if not isinstance(component_parameters, dict):
+        component_parameters = {}
+    changed = False
+
+    def _prune_params(params: Any, allowed_tokens: set[str]) -> Any:
+        nonlocal changed
+        if not isinstance(params, list):
+            return params
+        out: list[Any] = []
+        for p in params:
+            keep = True
+            cand = _resolve_parameter_candidate(p, component_parameters)
+            if isinstance(cand, dict) and str(cand.get("in") or "") == "path":
+                name = str(cand.get("name") or "")
+                if name and name not in allowed_tokens:
+                    keep = False
+            if keep:
+                out.append(p)
+        if len(out) != len(params):
+            changed = True
+        return out
+
+    for path_key, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        allowed_tokens = _collect_path_tokens(str(path_key))
+        if "parameters" in path_item:
+            path_item["parameters"] = _prune_params(path_item.get("parameters"), allowed_tokens)
+        for method, op in path_item.items():
+            if str(method).lower() not in methods or not isinstance(op, dict):
+                continue
+            if "parameters" in op:
+                op["parameters"] = _prune_params(op.get("parameters"), allowed_tokens)
+    return changed
 
 
 def extract_to_markdown(
@@ -54,6 +137,15 @@ def extract_to_markdown(
             conv_path = conversion_dir / "openapi.converted.json"
             conv_path.write_bytes(converted_document_to_json_bytes(converted))
             path_for_resolve = conv_path
+        else:
+            normalized_raw, changed = _stringify_mapping_keys(raw)
+            changed = _prune_invalid_openapi_path_parameters(normalized_raw) or changed
+            if changed:
+                _emit(on_progress, 4, "normalize_input")
+                conversion_dir = Path(tempfile.mkdtemp(prefix="openapi-norm-"))
+                conv_path = conversion_dir / "openapi.normalized.json"
+                conv_path.write_bytes(converted_document_to_json_bytes(normalized_raw))
+                path_for_resolve = conv_path
         _emit(on_progress, 5, "resolve_refs")
         resolved = resolve_openapi_file(path_for_resolve, strict=True)
         parse_openapi_dict(resolved)

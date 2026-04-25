@@ -193,9 +193,9 @@ md-db-mcp = "md_generator.db.api.mcp_server:main"
 md-graph = "md_generator.graph.cli.main:main"
 md-graph-api = "md_generator.graph.api.run:main"
 md-graph-mcp = "md_generator.graph.api.mcp_server:main"
-md-api = "md_generator.openapi.cli.main:main"
-md-api-api = "md_generator.openapi.api.run:main"
-md-api-mcp = "md_generator.openapi.api.mcp_server:main"
+md-openapi = "md_generator.openapi.cli.main:main"
+md-openapi-api = "md_generator.openapi.api.run:main"
+md-openapi-mcp = "md_generator.openapi.api.mcp_server:main"
 mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]

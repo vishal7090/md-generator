@@ -32,6 +32,20 @@ def _rewrite_ref_strings(obj: Any) -> None:
             _rewrite_ref_strings(it)
 
 
+def _normalize_oas3_schema_nodes(obj: Any) -> None:
+    """In-place OAS3 schema normalization for validator compatibility."""
+    if isinstance(obj, dict):
+        # Swagger 2 discriminator uses a plain string; OAS3 requires an object with propertyName.
+        disc = obj.get("discriminator")
+        if isinstance(disc, str):
+            obj["discriminator"] = {"propertyName": disc}
+        for v in obj.values():
+            _normalize_oas3_schema_nodes(v)
+    elif isinstance(obj, list):
+        for it in obj:
+            _normalize_oas3_schema_nodes(it)
+
+
 def _swagger_param_to_oas3_param(p: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for k in ("name", "in", "description", "required", "deprecated", "allowEmptyValue"):
@@ -76,11 +90,33 @@ def _swagger_response_to_oas3(resp: dict[str, Any], default_produces: list[str])
     out: dict[str, Any] = {"description": str(resp.get("description") or "")}
     headers = resp.get("headers")
     if isinstance(headers, dict) and headers:
-        out["headers"] = copy.deepcopy(headers)
+        out["headers"] = {str(k): _swagger_header_to_oas3_header(v) for k, v in headers.items()}
     schema = resp.get("schema")
     if schema is not None:
         mt = default_produces[0] if default_produces else "application/json"
         out["content"] = {mt: {"schema": copy.deepcopy(schema)}}
+    return out
+
+
+def _swagger_header_to_oas3_header(h: Any) -> dict[str, Any]:
+    if not isinstance(h, dict):
+        return {"schema": {"type": "string"}}
+    out: dict[str, Any] = {}
+    if isinstance(h.get("description"), str):
+        out["description"] = h["description"]
+    if "schema" in h and isinstance(h["schema"], dict):
+        out["schema"] = copy.deepcopy(h["schema"])
+        return out
+    sch: dict[str, Any] = {}
+    if isinstance(h.get("type"), str):
+        sch["type"] = h["type"]
+    if isinstance(h.get("format"), str):
+        sch["format"] = h["format"]
+    if isinstance(h.get("items"), dict):
+        sch["items"] = copy.deepcopy(h["items"])
+    if isinstance(h.get("enum"), list):
+        sch["enum"] = copy.deepcopy(h["enum"])
+    out["schema"] = sch or {"type": "string"}
     return out
 
 
@@ -291,7 +327,7 @@ def _convert_top_parameters(params: dict[str, Any]) -> dict[str, Any]:
     for k in sorted(params.keys()):
         v = params[k]
         if isinstance(v, dict):
-            out[k] = _swagger_param_to_oas3_param(v)
+            out[str(k)] = _swagger_param_to_oas3_param(v)
     return out
 
 
@@ -302,7 +338,7 @@ def _convert_top_responses(responses: dict[str, Any], default_produces: list[str
     for k in sorted(responses.keys()):
         v = responses[k]
         if isinstance(v, dict):
-            out[k] = _swagger_response_to_oas3(v, default_produces)
+            out[str(k)] = _swagger_response_to_oas3(v, default_produces)
     return out
 
 
@@ -407,6 +443,7 @@ def convert_swagger2_to_openapi3(doc: dict[str, Any]) -> dict[str, Any]:
             out_doc[k] = copy.deepcopy(v)
 
     _rewrite_ref_strings(out_doc)
+    _normalize_oas3_schema_nodes(out_doc)
     return out_doc
 
 
