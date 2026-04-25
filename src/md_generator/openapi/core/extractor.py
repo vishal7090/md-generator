@@ -2,12 +2,18 @@
 
 import logging
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Callable
 
+from md_generator.openapi.converters.swagger2_to_openapi3 import (
+    convert_swagger2_to_openapi3,
+    converted_document_to_json_bytes,
+    is_swagger2_document,
+)
 from md_generator.openapi.core.run_config import ApiRunConfig
 from md_generator.openapi.enrichers.rules import enrich_endpoints
-from md_generator.openapi.loaders.spec_loader import load_openapi_source
+from md_generator.openapi.loaders.spec_loader import load_openapi_source, sniff_and_parse_text
 from md_generator.openapi.models.domain import ApiSpecMeta
 from md_generator.openapi.normalizers.operations import build_endpoint_docs, load_security_schemes
 from md_generator.openapi.normalizers.schema_flatten import flatten_schema
@@ -37,9 +43,19 @@ def extract_to_markdown(
         url=cfg.url,
         url_timeout_s=cfg.url_timeout_s,
     )
+    conversion_dir: Path | None = None
     try:
+        raw = sniff_and_parse_text(loaded.path)
+        path_for_resolve = loaded.path
+        if is_swagger2_document(raw):
+            _emit(on_progress, 4, "convert_swagger2")
+            converted = convert_swagger2_to_openapi3(raw)
+            conversion_dir = Path(tempfile.mkdtemp(prefix="openapi-sw2-"))
+            conv_path = conversion_dir / "openapi.converted.json"
+            conv_path.write_bytes(converted_document_to_json_bytes(converted))
+            path_for_resolve = conv_path
         _emit(on_progress, 5, "resolve_refs")
-        resolved = resolve_openapi_file(loaded.path, strict=True)
+        resolved = resolve_openapi_file(path_for_resolve, strict=True)
         parse_openapi_dict(resolved)
         schemes = load_security_schemes(resolved)
         _emit(on_progress, 25, "normalize_operations")
@@ -87,6 +103,11 @@ def extract_to_markdown(
                     on_file(p)
         return meta
     finally:
+        if conversion_dir and conversion_dir.is_dir():
+            try:
+                shutil.rmtree(conversion_dir, ignore_errors=True)
+            except Exception:
+                logger.debug("cleanup failed for %s", conversion_dir, exc_info=True)
         if loaded.cleanup_dir and loaded.cleanup_dir.is_dir():
             try:
                 shutil.rmtree(loaded.cleanup_dir, ignore_errors=True)

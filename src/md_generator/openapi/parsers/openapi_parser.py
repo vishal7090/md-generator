@@ -13,6 +13,6 @@ def validate_openapi_version(doc: dict[str, Any]) -> str:
 
 
 def parse_openapi_dict(doc: dict[str, Any]) -> dict[str, Any]:
-    """Light validation hook; returns the same dict for a stable pipeline surface."""
+    """Validate OpenAPI 3.x after resolution (Swagger 2.0 is converted earlier in the pipeline)."""
     validate_openapi_version(doc)
     return doc
