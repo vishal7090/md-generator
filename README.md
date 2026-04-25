@@ -134,7 +134,10 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-graph` | `md_generator.graph.cli.main:main` | `pip install "mdengine[graph]"` then `md-graph --source neo4j --uri bolt://…` (or `mdengine graph-to-md …`) |
 | `md-graph-api` | `md_generator.graph.api.run:main` | FastAPI on port **8012** (`GRAPH_TO_MD_PORT`): `POST /graph-to-md/run`, `/graph-to-md/job`, SSE `/graph-to-md/job/{id}/events` |
 | `md-graph-mcp` | `md_generator.graph.api.mcp_server:main` | Standalone MCP for graph export tools |
-| `mdengine` | `md_generator.engine_cli:main` | `mdengine db-to-md …` / `mdengine graph-to-md …` (delegates to `md-db` / `md-graph`) |
+| `md-api` | `md_generator.openapi.cli.main:main` | `pip install "mdengine[openapi]"` then `md-api generate --file openapi.yaml --output ./docs` (or `mdengine openapi-to-md generate …`) |
+| `md-api-api` | `md_generator.openapi.api.run:main` | FastAPI on port **8015** (`OPENAPI_TO_MD_PORT`): `POST /openapi-to-md/generate` (OpenAPI upload → ZIP), `/health`, MCP at **`/mcp`** |
+| `md-api-mcp` | `md_generator.openapi.api.mcp_server:main` | Standalone MCP: `api_validate_openapi_yaml`, `api_generate_readme_markdown`, `api_run_sync_zip_base64` |
+| `mdengine` | `md_generator.engine_cli:main` | `mdengine db-to-md …` / `mdengine graph-to-md …` / `mdengine openapi-to-md generate …` |
 
 **db-to-md ER diagrams:** add **`erd`** to the export feature list (YAML `features.include`, API body, or CLI `--include …,erd`). **Preferred:** **Graphviz** (`dot` on `PATH`, or **`GRAPHVIZ_DOT`**) produces `erd/*.dot`, `erd/*.png`, and `erd/*.svg`. **If Graphviz is missing,** the exporter falls back to **Mermaid** (`erDiagram`): it writes `erd/*.mermaid` plus a fenced **`erd/*.md`** for GitHub-style preview. With **`mermaid-py`** (included in `mdengine[db]`), it also requests **PNG/SVG** via mermaid.ink (requires network unless you self-host mermaid.ink and set **`MERMAID_INK_SERVER`** per [mermaid-py](https://pypi.org/project/mermaid-py/)). Tune **`erd.max_tables`** (default 100) and **`erd.scope`** (`full` \| `per_schema` \| `per_table`) under `erd:` in YAML; CLI: `--erd-max-tables`, `--erd-scope`. Async job SSE uses `progress_update` with `current` starting with `erd:`.
 
@@ -460,7 +463,7 @@ Equivalent modules: `python -m md_generator.media.audio.api.mcp_server`, `python
 
 ### Thin shims (repo clone)
 
-[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`. [`db-to-md/converter.py`](db-to-md/converter.py) delegates to `md-db`; tests live under `db-to-md/tests/`. **graph-to-md** uses `md-graph` / `mdengine graph-to-md` directly (no thin `converter.py` shim); tests live under [`graph-to-md/tests/`](graph-to-md/tests/).
+[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`. [`db-to-md/converter.py`](db-to-md/converter.py) delegates to `md-db`; tests live under `db-to-md/tests/`. **graph-to-md** uses `md-graph` / `mdengine graph-to-md` directly (no thin `converter.py` shim); tests live under [`graph-to-md/tests/`](graph-to-md/tests/). [`openapi-to-md/converter.py`](openapi-to-md/converter.py) delegates to `md-api`; tests live under [`openapi-to-md/tests/`](openapi-to-md/tests/); example OpenAPI and output notes: [`openapi-to-md/examples/`](openapi-to-md/examples/).
 
 ---
 
@@ -492,6 +495,7 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | Playwright / SPA | `md_generator.playwright.api.main:app` | `playwright`, `api`, `mcp` |
 | Database metadata | `md_generator.db.api.main:app` | `db`, `api`, `mcp` |
 | Graph metadata (Neo4j / NetworkX) | `md_generator.graph.api.main:app` | `graph`, `api`, `mcp` |
+| OpenAPI → Markdown | `md_generator.openapi.api.main:app` | `openapi`, `api`, `mcp` |
 | Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (use **`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
 | Video (Whisper) | `md_generator.media.video.api.main:create_app` (use **`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
 | YouTube | `md_generator.media.youtube.api.main:create_app` (use **`--factory`**) or `…main:app` | `youtube`, `api`, `mcp` |
@@ -505,12 +509,13 @@ uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8010
 uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8011
 uvicorn md_generator.playwright.api.main:app --host 127.0.0.1 --port 8014
 uvicorn md_generator.graph.api.main:app --host 127.0.0.1 --port 8012
+uvicorn md_generator.openapi.api.main:app --host 127.0.0.1 --port 8015
 uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
 uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
 uvicorn md_generator.media.youtube.api.main:create_app --factory --host 127.0.0.1 --port 8013
 ```
 
-**Port note:** **`md-graph-api`** and **`md-video-api`** both default to **8012**; set **`GRAPH_TO_MD_PORT`** or **`MD_VIDEO_API_PORT`** when you need both on one machine.
+**Port note:** **`md-graph-api`** and **`md-video-api`** both default to **8012**; set **`GRAPH_TO_MD_PORT`** or **`MD_VIDEO_API_PORT`** when you need both on one machine. **`md-api-api`** defaults to **8015** (`OPENAPI_TO_MD_PORT`) so it does not collide with **`md-youtube-api`** (**8013**) or **`md-playwright-api`** (**8014**).
 
 ### MCP over HTTP on the same server
 
@@ -532,6 +537,7 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | Playwright / SPA | `PLAYWRIGHT_TO_MD_` | `PLAYWRIGHT_TO_MD_MAX_SYNC_URLS`, `PLAYWRIGHT_TO_MD_MAX_JOB_URLS`, `PLAYWRIGHT_TO_MD_JOB_TTL_SECONDS`, `PLAYWRIGHT_TO_MD_TEMP_DIR`, `PLAYWRIGHT_TO_MD_CORS_ORIGINS`, `PLAYWRIGHT_TO_MD_API_HOST`, `PLAYWRIGHT_TO_MD_API_PORT` (default **8014**) |
 | Database metadata | `DB_TO_MD_` | `DB_TO_MD_JOB_SQLITE_PATH`, `DB_TO_MD_JOB_WORKSPACE_ROOT`, `DB_TO_MD_CORS_ORIGINS`, `DB_TO_MD_MAX_SYNC_ZIP_MB`, `DB_TO_MD_HOST`, `DB_TO_MD_PORT` (default **8010**) |
 | Graph metadata | `GRAPH_TO_MD_` | `GRAPH_TO_MD_JOB_SQLITE_PATH`, `GRAPH_TO_MD_JOB_WORKSPACE_ROOT`, `GRAPH_TO_MD_CORS_ORIGINS`, `GRAPH_TO_MD_MAX_SYNC_ZIP_MB`, `GRAPH_TO_MD_HOST`, `GRAPH_TO_MD_PORT` (default **8012**) |
+| OpenAPI → Markdown | `OPENAPI_TO_MD_` | `OPENAPI_TO_MD_CORS_ORIGINS`, `OPENAPI_TO_MD_MAX_SYNC_ZIP_MB`, `OPENAPI_TO_MD_HOST`, `OPENAPI_TO_MD_PORT` (default **8015**) |
 | Audio API | `MD_AUDIO_` | `MD_AUDIO_MAX_UPLOAD_MB`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB`, `MD_AUDIO_JOB_TTL_SECONDS`, `MD_AUDIO_TEMP_DIR`, `MD_AUDIO_CORS_ORIGINS`, `MD_AUDIO_API_HOST`, `MD_AUDIO_API_PORT` |
 | Video API | `MD_VIDEO_` | Same pattern as audio with `MD_VIDEO_*` (defaults: larger upload/sync caps, port **8012**) |
 | YouTube API | `MD_YOUTUBE_` | `MD_YOUTUBE_JOB_TTL_SECONDS`, `MD_YOUTUBE_TEMP_DIR`, `MD_YOUTUBE_CORS_ORIGINS`, `MD_YOUTUBE_API_HOST`, `MD_YOUTUBE_API_PORT` (default **8013**); optional `MD_YOUTUBE_YTDLP` path for audio fallback |
@@ -564,6 +570,7 @@ Two usage patterns:
 | YouTube | `md-youtube-mcp` or `python -m md_generator.media.youtube.api.mcp_server` — same transports |
 | Database metadata | `md-db-mcp` or `python -m md_generator.db.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 | Graph (Neo4j / NetworkX) | `md-graph-mcp` or `python -m md_generator.graph.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
+| OpenAPI → Markdown | `md-api-mcp` or `python -m md_generator.openapi.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 
 **Word** and **XLSX** also ship a small runner script in the repo:
 
@@ -588,7 +595,7 @@ pip install -e ".[dev,all]"   # or a smaller subset of extras
 python -m pytest
 ```
 
-Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`) and **`graph-to-md/tests/`**; `pyproject.toml` configures `pythonpath = ["src"]` so `md_generator` resolves without a separate `PYTHONPATH`.
+Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), **`graph-to-md/tests/`**, and **`openapi-to-md/tests/`**; `pyproject.toml` configures `pythonpath = ["src"]` so `md_generator` resolves without a separate `PYTHONPATH`.
 
 ---
 

@@ -1,0 +1,16 @@
+﻿FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN useradd -m -u 1000 appuser
+
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+
+RUN pip install --no-cache-dir ".[api,openapi]"
+
+USER appuser
+
+EXPOSE 8015
+
+CMD ["python", "-m", "uvicorn", "md_generator.openapi.api.main:app", "--host", "0.0.0.0", "--port", "8015"]

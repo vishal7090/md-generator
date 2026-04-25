@@ -1,0 +1,14 @@
+input:
+  file: null
+  folder: null
+  zip: null
+  url: null
+
+output:
+  path: ./docs
+  formats:
+    - md
+    - mermaid
+
+openapi:
+  preferred_media_type: application/json

@@ -7,7 +7,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) < 1:
         print(
-            "Usage: mdengine db-to-md ... | mdengine graph-to-md [--config path] [--source networkx|neo4j] ...",
+            "Usage: mdengine db-to-md ... | mdengine graph-to-md ... | mdengine openapi-to-md generate ...",
             file=sys.stderr,
         )
         return 2
@@ -19,8 +19,12 @@ def main(argv: list[str] | None = None) -> int:
         from md_generator.graph.cli.main import main as graph_main
 
         return graph_main(argv[1:])
+    if argv[0] == "openapi-to-md":
+        from md_generator.openapi.cli.main import main as openapi_main
+
+        return openapi_main(argv[1:])
     print(
-        "Usage: mdengine db-to-md ... | mdengine graph-to-md [--config path] [--source networkx|neo4j] ...",
+        "Usage: mdengine db-to-md ... | mdengine graph-to-md ... | mdengine openapi-to-md generate ...",
         file=sys.stderr,
     )
     return 2
