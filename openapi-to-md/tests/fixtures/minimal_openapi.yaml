@@ -1,0 +1,81 @@
+openapi: 3.0.3
+info:
+  title: Minimal Pet API
+  version: "1.0.0"
+servers:
+  - url: https://api.example.com/v1
+paths:
+  /pets:
+    get:
+      tags: [pets]
+      operationId: listPets
+      summary: List pets
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+    post:
+      tags: [pets]
+      operationId: createPet
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pet"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+  /pets/{id}:
+    get:
+      operationId: getPet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Named:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    PetKind:
+      type: string
+      enum: [cat, dog]
+    Pet:
+      allOf:
+        - $ref: "#/components/schemas/Named"
+        - type: object
+          required: [kind]
+          properties:
+            kind:
+              $ref: "#/components/schemas/PetKind"
+            age:
+              type: integer
