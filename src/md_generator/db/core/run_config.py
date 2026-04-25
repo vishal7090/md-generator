@@ -93,6 +93,11 @@ def load_run_config(path: Path | None, overrides: dict[str, Any] | None = None) 
                 raw["database"] = db
         except Exception:
             pass
+    if db_type in ("sqlite",):
+        cur = db.get("schema")
+        if cur is None or str(cur).strip() == "" or str(cur).lower() == "public":
+            db["schema"] = "main"
+            raw["database"] = db
     out = raw.get("output") or {}
     feats = raw.get("features") or {}
     exe = raw.get("execution") or {}

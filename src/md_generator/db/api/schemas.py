@@ -10,7 +10,7 @@ from md_generator.db.core.run_config import ErdConfig, RunConfig
 
 
 class DatabaseSection(BaseModel):
-    type: str = Field(..., description="postgres | mysql | oracle | mongo")
+    type: str = Field(..., description="postgres | mysql | oracle | mongo | sqlite")
     uri: str
     schema: str | None = None
     database: str | None = None
