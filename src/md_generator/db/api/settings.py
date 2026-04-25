@@ -16,6 +16,7 @@ class DbApiSettings(BaseSettings):
     job_workspace_root: str | None = None
     cors_origins: str = "*"
     max_sync_zip_mb: int = 80
+    max_sqlite_upload_mb: int = 256
 
 
 def cors_list(settings: DbApiSettings) -> list[str]:

@@ -1,7 +1,19 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from urllib.parse import urlparse, urlunparse
+
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def is_sqlite_database_bytes(data: bytes) -> bool:
+    return len(data) >= len(_SQLITE_MAGIC) and data[: len(_SQLITE_MAGIC)] == _SQLITE_MAGIC
+
+
+def sqlite_uri_for_path(abs_path: Path) -> str:
+    """Build a SQLAlchemy SQLite URI for an absolute filesystem path."""
+    return f"sqlite:///{abs_path.resolve().as_posix()}"
 
 
 def redact_uri(uri: str) -> str:
