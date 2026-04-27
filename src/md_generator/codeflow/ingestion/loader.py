@@ -6,6 +6,12 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from md_generator.codeflow.lang_dispatch import (
+    MIXED_LANG_KEYS,
+    extensions_for_languages,
+    normalize_language_filter,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class LoadedWorkspace:
@@ -39,17 +45,22 @@ def load_workspace(
 
 
 def collect_source_files(root: Path, languages: str) -> list[Path]:
-    exts: set[str] = set()
-    if languages in ("mixed", "python"):
-        exts.add(".py")
-    if languages in ("mixed", "java"):
-        exts.add(".java")
+    allowed = normalize_language_filter(languages)
+    exts = extensions_for_languages(allowed)
     if not exts:
-        exts = {".py", ".java"}
+        exts = extensions_for_languages(MIXED_LANG_KEYS)
     out: list[Path] = []
     for p in root.rglob("*"):
-        if p.is_file() and p.suffix.lower() in exts:
-            if "node_modules" in p.parts or ".git" in p.parts:
-                continue
-            out.append(p)
+        if not p.is_file():
+            continue
+        if p.suffix.lower() not in exts:
+            continue
+        if "node_modules" in p.parts or ".git" in p.parts or "vendor" in p.parts:
+            continue
+        out.append(p)
     return sorted(out)
+
+
+def source_file_extensions() -> frozenset[str]:
+    """All extensions the tool may treat as source when ``languages=mixed``."""
+    return frozenset(extensions_for_languages(MIXED_LANG_KEYS))

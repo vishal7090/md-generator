@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
@@ -29,6 +28,13 @@ def write_flow_mermaid(out: Path, entry_id: str, sl: FlowSlice) -> None:
         b = nid_for(v)
         labs = ed.get("labels") or []
         lab = labs[-1] if labs else ed.get("condition") or ""
+        meta: list[str] = []
+        if ed.get("recursive"):
+            meta.append("recursive")
+        if ed.get("unknown_call"):
+            meta.append("unknown_call")
+        if meta:
+            lab = f"{lab}|{','.join(meta)}" if lab else ",".join(meta)
         if lab:
             esc = str(lab).replace('"', "'")[:120]
             lines.append(f"  {a} -->|{esc}| {b}")

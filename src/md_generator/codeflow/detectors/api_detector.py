@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from md_generator.codeflow.models.ir import EntryKind, EntryRecord
@@ -116,10 +117,106 @@ def detect_api_entries_java(path: Path, project_root: Path) -> list[EntryRecord]
     return out
 
 
+_HTTP_ROUTE = re.compile(
+    r"\b(app|router|server)\s*\.\s*(get|post|put|delete|patch|options|head|use)\s*\(",
+    re.I,
+)
+
+
+def detect_api_entries_js_ts(path: Path, project_root: Path) -> list[EntryRecord]:
+    """Express / Fastify / similar: handlers using ``app.get`` / ``router.post`` style calls."""
+    suf = path.suffix.lower()
+    if suf not in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"):
+        return []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if not _HTTP_ROUTE.search(text):
+        return []
+    if not re.search(
+        r"(express|fastify|koa|@nestjs|from\s+['\"]express['\"]|require\(\s*['\"]express['\"]\))",
+        text,
+        re.I,
+    ):
+        return []
+    key = path.resolve().relative_to(project_root.resolve()).as_posix()
+    out: list[EntryRecord] = []
+    try:
+        from tree_sitter import Language, Parser
+        import tree_sitter_javascript as tsjs
+        import tree_sitter_typescript as tsts
+
+        suf2 = path.suffix.lower()
+        if suf2 in (".ts", ".mts", ".cts"):
+            lang = Language(tsts.language_typescript())
+        elif suf2 == ".tsx":
+            lang = Language(tsts.language_tsx())
+        else:
+            lang = Language(tsjs.language())
+        parser = Parser(lang)
+        tree = parser.parse(text.encode("utf-8"))
+        source = text.encode("utf-8")
+
+        def node_text(n: object) -> str:
+            return source[n.start_byte : n.end_byte].decode("utf-8", errors="replace")
+
+        def is_http_route_call(n: object) -> bool:
+            if n.type != "call_expression":
+                return False
+            fn = n.child_by_field_name("function")
+            if fn is None:
+                return False
+            t = node_text(fn).replace(" ", "")
+            return bool(_HTTP_ROUTE.search(t + "("))
+
+        def enclosing_function_name(n: object) -> str | None:
+            cur = getattr(n, "parent", None)
+            while cur is not None:
+                if cur.type in ("function_declaration", "method_definition"):
+                    nm = cur.child_by_field_name("name")
+                    return node_text(nm).strip() if nm else None
+                cur = getattr(cur, "parent", None)
+            return None
+
+        seen: set[str] = set()
+
+        def visit(n: object) -> None:
+            for c in n.children:
+                visit(c)
+            if is_http_route_call(n):
+                fname = enclosing_function_name(n) or "__handler__"
+                sid = _sid(key, None, fname)
+                if sid not in seen:
+                    seen.add(sid)
+                    out.append(
+                        EntryRecord(
+                            symbol_id=sid,
+                            kind=EntryKind.API_REST,
+                            label="JS/TS HTTP route (Express/Fastify-style)",
+                            file_path=str(path.resolve()),
+                            line=n.start_point[0] + 1,
+                        )
+                    )
+
+        visit(tree.root_node)
+    except Exception:
+        if not out:
+            out.append(
+                EntryRecord(
+                    symbol_id=_sid(key, None, "__http__"),
+                    kind=EntryKind.API_REST,
+                    label="JS/TS HTTP routes (file-level heuristic)",
+                    file_path=str(path.resolve()),
+                    line=1,
+                )
+            )
+    return out
+
+
 def detect_api_entries(path: Path, project_root: Path) -> list[EntryRecord]:
     suf = path.suffix.lower()
     if suf == ".py":
         return detect_api_entries_python(path, project_root)
     if suf == ".java":
         return detect_api_entries_java(path, project_root)
+    if suf in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"):
+        return detect_api_entries_js_ts(path, project_root)
     return []

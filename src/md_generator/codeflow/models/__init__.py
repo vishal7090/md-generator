@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from md_generator.codeflow.models.ir import (
     BranchPoint,
+    BusinessRule,
     CallSite,
     EntryKind,
     EntryRecord,
@@ -11,6 +12,7 @@ from md_generator.codeflow.models.ir import (
 
 __all__ = [
     "BranchPoint",
+    "BusinessRule",
     "CallSite",
     "EntryKind",
     "EntryRecord",

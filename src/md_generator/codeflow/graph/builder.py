@@ -5,7 +5,21 @@ from pathlib import Path
 
 import networkx as nx
 
-from md_generator.codeflow.models.ir import FileParseResult
+from md_generator.codeflow.models.ir import CallSite, FileParseResult
+
+
+def _edge_unknown_call(call: CallSite, callee_id: str) -> bool:
+    """True when the callee is not a confidently resolved static target (dynamic, unknown, proxy-style)."""
+    if call.resolution in ("unknown", "dynamic"):
+        return True
+    if str(callee_id).startswith("unknown::"):
+        return True
+    return False
+
+
+def _edge_recursive(caller_id: str, callee_id: str) -> bool:
+    """True for direct self-calls (same symbol id as caller and callee)."""
+    return caller_id == callee_id
 
 
 @dataclass(slots=True)
@@ -84,6 +98,8 @@ def build_graph(parse_results: list[FileParseResult], project_root: Path) -> Gra
 
             edge_type = "async" if call.is_async else "sync"
             cond = call.condition_label
+            unknown_call = _edge_unknown_call(call, callee_id)
+            recursive = _edge_recursive(call.caller_id, callee_id)
             if g.has_edge(call.caller_id, callee_id):
                 labs = list(g.edges[call.caller_id, callee_id].get("labels") or [])
                 if cond and cond not in labs:
@@ -91,6 +107,9 @@ def build_graph(parse_results: list[FileParseResult], project_root: Path) -> Gra
                 g.edges[call.caller_id, callee_id]["labels"] = labs
                 if cond:
                     g.edges[call.caller_id, callee_id]["condition"] = cond
+                ed = g.edges[call.caller_id, callee_id]
+                ed["unknown_call"] = bool(ed.get("unknown_call")) or unknown_call
+                ed["recursive"] = bool(ed.get("recursive")) or recursive
             else:
                 g.add_edge(
                     call.caller_id,
@@ -100,6 +119,8 @@ def build_graph(parse_results: list[FileParseResult], project_root: Path) -> Gra
                     condition=cond,
                     labels=[cond] if cond else [],
                     async_=call.is_async,
+                    unknown_call=unknown_call,
+                    recursive=recursive,
                 )
 
     return GraphBuildResult(graph=g, project_root=root)

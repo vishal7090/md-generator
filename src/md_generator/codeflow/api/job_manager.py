@@ -115,6 +115,9 @@ class CodeflowJobManager:
             jobs=True,
             runtime=cfg_template.runtime,
             paths_override=cfg_template.paths_override,
+            business_rules=cfg_template.business_rules,
+            business_rules_sql=cfg_template.business_rules_sql,
+            business_rules_combined=cfg_template.business_rules_combined,
         )
         now = time.time()
         cfg_dump = json.dumps(scan_config_dump(cfg), sort_keys=True)

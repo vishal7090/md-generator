@@ -15,6 +15,14 @@ def write_sequence_mermaid(out: Path, entry_id: str, sl: FlowSlice) -> None:
             lab = str(ed["labels"][-1])[:80]
         elif ed.get("condition"):
             lab = str(ed["condition"])[:80]
+        meta: list[str] = []
+        if ed.get("recursive"):
+            meta.append("recursive")
+        if ed.get("unknown_call"):
+            meta.append("unknown_call")
+        if meta:
+            suf = ",".join(meta)
+            lab = f"{lab} [{suf}]" if lab else suf
         arrow = f"  {ul}->>{vl}: {lab}" if lab else f"  {ul}->>{vl}: call"
         lines.append(arrow)
     lines.append("")

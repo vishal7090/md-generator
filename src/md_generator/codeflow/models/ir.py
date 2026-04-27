@@ -6,6 +6,23 @@ from pathlib import Path
 from typing import Literal
 
 
+RuleSource = Literal["branch", "validation", "sql_trigger", "predicate"]
+RuleConfidence = Literal["high", "medium", "low"]
+
+
+@dataclass(frozen=True, slots=True)
+class BusinessRule:
+    """Extracted business-oriented rule for documentation (not evaluated at runtime)."""
+
+    source: RuleSource
+    symbol_id: str | None
+    file_path: str
+    line: int
+    title: str
+    detail: str
+    confidence: RuleConfidence = "medium"
+
+
 class EntryKind(str, Enum):
     API_REST = "api_rest"
     MAIN = "main"
@@ -77,3 +94,4 @@ class FileParseResult:
     calls: list[CallSite] = field(default_factory=list)
     branches: list[BranchPoint] = field(default_factory=list)
     entries: list[EntryRecord] = field(default_factory=list)
+    rules: list[BusinessRule] = field(default_factory=list)

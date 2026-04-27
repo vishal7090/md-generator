@@ -115,6 +115,15 @@ codeflow = [
   "networkx>=3.2.0",
   "javalang>=0.13.0",
 ]
+codeflow-treesitter = [
+  "tree-sitter>=0.21.0",
+  "tree-sitter-javascript>=0.21.0",
+  "tree-sitter-typescript>=0.23.0",
+  "tree-sitter-cpp>=0.23.0",
+]
+codeflow-clang = [
+  "clang>=16.0.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -137,6 +146,7 @@ dev = [
   "mdengine[graph]",
   "mdengine[openapi]",
   "mdengine[codeflow]",
+  "mdengine[codeflow-treesitter]",
 ]
 all = [
   "pymupdf>=1.24.0",

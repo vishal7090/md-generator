@@ -31,8 +31,27 @@ class ParserRegistry:
 
 
 def register_defaults(reg: ParserRegistry) -> None:
+    from md_generator.codeflow.parsers.cpp_parser import CppParser
+    from md_generator.codeflow.parsers.go_parser import GoParser
     from md_generator.codeflow.parsers.java_parser import JavaParser
+    from md_generator.codeflow.parsers.php_parser import PhpParser
     from md_generator.codeflow.parsers.python_parser import PythonParser
 
     reg.register(PythonParser())
     reg.register(JavaParser())
+    reg.register(CppParser())
+    reg.register(GoParser())
+    reg.register(PhpParser())
+    try:
+        from tree_sitter import Language
+
+        import tree_sitter_javascript as tsjs
+        import tree_sitter_typescript as tsts
+
+        from md_generator.codeflow.parsers.treesitter_js_ts_parser import TreesitterJsTsParser
+
+        reg.register(TreesitterJsTsParser("javascript", Language(tsjs.language())))
+        reg.register(TreesitterJsTsParser("typescript", Language(tsts.language_typescript())))
+        reg.register(TreesitterJsTsParser("tsx", Language(tsts.language_tsx())))
+    except ImportError:
+        pass

@@ -8,13 +8,27 @@ from pathlib import Path
 
 from md_generator.codeflow.analyzers.flow_analyzer import slice_from_entry
 from md_generator.codeflow.detectors.entry_detector import apply_entry_detectors, resolve_entry_symbol_ids
+from md_generator.codeflow.detectors.entry_rank import sort_entry_ids
 from md_generator.codeflow.graph.builder import GraphBuildResult, build_graph, graph_to_serializable
 from md_generator.codeflow.generators.html import write_html_bundle
+from md_generator.codeflow.generators.business_rules_markdown import (
+    write_business_rules_markdown,
+    write_combined_entry_markdown,
+)
+from md_generator.codeflow.generators.entry_markdown import (
+    pretty_start_method,
+    type_label_for_kind,
+    write_entry_markdown,
+    write_system_overview,
+)
+from md_generator.codeflow.generators.flow_summary import one_line_summary
 from md_generator.codeflow.generators.markdown import write_flow_markdown
 from md_generator.codeflow.generators.mermaid import write_flow_mermaid
 from md_generator.codeflow.generators.sequence import write_sequence_mermaid
 from md_generator.codeflow.ingestion.loader import LoadedWorkspace, collect_source_files
+from md_generator.codeflow.lang_dispatch import lang_for_path, normalize_language_filter, should_parse_file_lang
 from md_generator.codeflow.models.ir import FileParseResult
+from md_generator.codeflow.rules.collector import collect_business_rules
 from md_generator.codeflow.parsers.base import ParserRegistry, register_defaults
 from md_generator.codeflow.core.run_config import ScanConfig
 
@@ -23,27 +37,17 @@ def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[F
     reg = ParserRegistry()
     register_defaults(reg)
     files = cfg.paths_override if cfg.paths_override else collect_source_files(ws.root, cfg.languages)
+    allowed = normalize_language_filter(cfg.languages)
     results: list[FileParseResult] = []
     for p in files:
-        lang = _lang_for_path(p)
-        if cfg.languages == "python" and lang != "python":
-            continue
-        if cfg.languages == "java" and lang != "java":
+        lang = lang_for_path(p)
+        if not should_parse_file_lang(lang, allowed):
             continue
         pr = reg.parse_file(p, ws.root, lang)
         if pr:
             results.append(pr)
     apply_entry_detectors(files, ws.root, results)
     return results
-
-
-def _lang_for_path(p: Path) -> str:
-    suf = p.suffix.lower()
-    if suf == ".py":
-        return "python"
-    if suf == ".java":
-        return "java"
-    return "unknown"
 
 
 def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Path:
@@ -68,7 +72,11 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
     if not entry_ids:
         entry_ids = [n for n in g.nodes()][: min(10, max(1, g.number_of_nodes()))]
 
+    entry_ids = sort_entry_ids(entry_ids, g, all_entries)
+    entry_by_symbol = {e.symbol_id: e for e in all_entries}
+
     include_map = cfg.parsed_include()
+    overview_rows: list[tuple[str, str, str, str, str]] = []
 
     for eid in entry_ids:
         if include_map:
@@ -80,8 +88,46 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         slug = _slug(eid)
         sub = out / slug
         sub.mkdir(parents=True, exist_ok=True)
+        rec = entry_by_symbol.get(eid)
         if "md" in fmts:
             write_flow_markdown(sub / "flow.md", eid, sl, g)
+            rules = None
+            if cfg.business_rules:
+                rules = collect_business_rules(
+                    eid,
+                    sl,
+                    g,
+                    parse_results,
+                    cfg,
+                    project_root=ws.root.resolve(),
+                )
+                write_business_rules_markdown(
+                    sub / "business_rules.md",
+                    rules,
+                    entry_hint=eid,
+                )
+                write_entry_markdown(sub / "entry.md", eid, sl, g, rec, rules=rules)
+                if cfg.business_rules_combined:
+                    write_combined_entry_markdown(
+                        sub / "entry.md",
+                        sub / "business_rules.md",
+                        sub / "entry.combined.md",
+                    )
+            else:
+                write_entry_markdown(sub / "entry.md", eid, sl, g, rec, rules=None)
+            if eid in g:
+                k = rec.kind.value if rec else g.nodes[eid].get("entry_kind")
+            else:
+                k = rec.kind.value if rec else None
+            overview_rows.append(
+                (
+                    slug,
+                    type_label_for_kind(k),
+                    pretty_start_method(g, eid),
+                    f"[entry](./{slug}/entry.md)",
+                    one_line_summary(sl, g),
+                ),
+            )
         if "mermaid" in fmts:
             write_flow_mermaid(sub / "flow.mmd", eid, sl)
             write_sequence_mermaid(sub / "sequence.mmd", eid, sl)
@@ -96,6 +142,13 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
     if "json" in fmts:
         full = graph_to_serializable(g)
         (out / "graph-full.json").write_text(json.dumps(full, indent=2), encoding="utf-8")
+
+    if "md" in fmts and overview_rows:
+        write_system_overview(
+            out / "system_overview.md",
+            overview_rows,
+            project_hint=f"Project: `{ws.root.resolve().as_posix()}`",
+        )
 
     return out
 
@@ -125,6 +178,9 @@ def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> byt
             async_mode=cfg.async_mode,
             jobs=cfg.jobs,
             runtime=cfg.runtime,
+            business_rules=cfg.business_rules,
+            business_rules_sql=cfg.business_rules_sql,
+            business_rules_combined=cfg.business_rules_combined,
         )
         run_scan(cfg2, workspace=wc)
         buf = td / "bundle.zip"

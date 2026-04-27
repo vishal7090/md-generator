@@ -16,6 +16,9 @@ class AnalyzeOptions(BaseModel):
     entry: str | None = None
     include: str | None = None
     exclude: str | None = None
+    business_rules: bool | None = Field(default=None, description="If set, enable/disable business rule MD")
+    business_rules_sql: bool | None = Field(default=None, description="If true, scan *.sql for triggers")
+    business_rules_combined: bool | None = Field(default=None, description="If set, control entry.combined.md")
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -25,6 +28,9 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     entry_list = None
     if raw and raw.entry:
         entry_list = [x.strip() for x in raw.entry.split(",") if x.strip()]
+    br = True if not raw or raw.business_rules is None else raw.business_rules
+    br_sql = False if not raw or raw.business_rules_sql is None else raw.business_rules_sql
+    br_comb = True if not raw or raw.business_rules_combined is None else raw.business_rules_combined
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -34,6 +40,9 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         entry=entry_list,
         include=raw.include if raw else None,
         exclude=raw.exclude if raw else None,
+        business_rules=br,
+        business_rules_sql=br_sql,
+        business_rules_combined=br_comb,
     )
 
 
@@ -59,6 +68,9 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "async_mode": cfg.async_mode,
         "jobs": cfg.jobs,
         "runtime": cfg.runtime,
+        "business_rules": cfg.business_rules,
+        "business_rules_sql": cfg.business_rules_sql,
+        "business_rules_combined": cfg.business_rules_combined,
     }
 
 
@@ -78,4 +90,7 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         async_mode=bool(data.get("async_mode", True)),
         jobs=bool(data.get("jobs", False)),
         runtime=bool(data.get("runtime", False)),
+        business_rules=bool(data.get("business_rules", True)),
+        business_rules_sql=bool(data.get("business_rules_sql", False)),
+        business_rules_combined=bool(data.get("business_rules_combined", True)),
     )

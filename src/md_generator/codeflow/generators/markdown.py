@@ -24,6 +24,12 @@ def write_flow_markdown(out: Path, entry_id: str, sl: FlowSlice, full_graph: obj
         et = ed.get("type", "sync")
         tail = f" ({lab})" if lab else ""
         async_note = " [async]" if ed.get("async_") or et == "async" else ""
-        lines.append(f"- `{u}` → `{v}`{tail}{async_note}")
+        flags: list[str] = []
+        if ed.get("recursive"):
+            flags.append("recursive")
+        if ed.get("unknown_call"):
+            flags.append("unknown_call")
+        flag_note = f" [{', '.join(flags)}]" if flags else ""
+        lines.append(f"- `{u}` → `{v}`{tail}{async_note}{flag_note}")
     lines.append("")
     out.write_text("\n".join(lines), encoding="utf-8")
