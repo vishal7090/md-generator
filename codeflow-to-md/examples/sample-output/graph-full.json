@@ -1,0 +1,142 @@
+{
+  "nodes": [
+    {
+      "id": "demo.py::ClassB.method1",
+      "type": "method",
+      "class_name": "ClassB",
+      "method_name": "method1",
+      "file_path": "demo.py",
+      "language": "python"
+    },
+    {
+      "id": "demo.py::ClassB.method2",
+      "type": "method",
+      "class_name": "ClassB",
+      "method_name": "method2",
+      "file_path": "demo.py",
+      "language": "python"
+    },
+    {
+      "id": "demo.py::ClassA.a",
+      "type": "method",
+      "class_name": "ClassA",
+      "method_name": "a",
+      "file_path": "demo.py",
+      "language": "python"
+    },
+    {
+      "id": "demo.py::ClassA.b",
+      "type": "method",
+      "class_name": "ClassA",
+      "method_name": "b",
+      "file_path": "demo.py",
+      "language": "python"
+    },
+    {
+      "id": "demo.py::ClassA.c",
+      "type": "method",
+      "class_name": "ClassA",
+      "method_name": "c",
+      "file_path": "demo.py",
+      "language": "python"
+    },
+    {
+      "id": "demo.py::main",
+      "type": "method",
+      "class_name": null,
+      "method_name": "main",
+      "file_path": "demo.py",
+      "language": "python"
+    },
+    {
+      "id": "demo.py::__main__",
+      "type": "entry",
+      "class_name": null,
+      "method_name": "__main__",
+      "file_path": "demo.py",
+      "language": "python",
+      "entry_kind": "main",
+      "entry_label": "Python __main__ guard"
+    },
+    {
+      "id": "ClassB().method1",
+      "type": "method",
+      "class_name": "ClassB()",
+      "method_name": "method1",
+      "file_path": "",
+      "language": "python",
+      "unresolved": false
+    },
+    {
+      "id": "ClassB().method2",
+      "type": "method",
+      "class_name": "ClassB()",
+      "method_name": "method2",
+      "file_path": "",
+      "language": "python",
+      "unresolved": false
+    },
+    {
+      "id": "ClassA().a",
+      "type": "method",
+      "class_name": "ClassA()",
+      "method_name": "a",
+      "file_path": "",
+      "language": "python",
+      "unresolved": false
+    }
+  ],
+  "edges": [
+    {
+      "source": "demo.py::ClassA.a",
+      "target": "demo.py::ClassA.b",
+      "type": "sync",
+      "resolution": "static",
+      "condition": null,
+      "labels": [],
+      "async_": false
+    },
+    {
+      "source": "demo.py::ClassA.b",
+      "target": "demo.py::ClassA.c",
+      "type": "sync",
+      "resolution": "static",
+      "condition": "if(cond1)",
+      "labels": [
+        "if(cond1)"
+      ],
+      "async_": false
+    },
+    {
+      "source": "demo.py::ClassA.b",
+      "target": "ClassB().method1",
+      "type": "sync",
+      "resolution": "dynamic",
+      "condition": "if(cond2)",
+      "labels": [
+        "if(cond2)"
+      ],
+      "async_": false
+    },
+    {
+      "source": "demo.py::ClassA.b",
+      "target": "ClassB().method2",
+      "type": "sync",
+      "resolution": "dynamic",
+      "condition": "else(L21)",
+      "labels": [
+        "else(L21)"
+      ],
+      "async_": false
+    },
+    {
+      "source": "demo.py::main",
+      "target": "ClassA().a",
+      "type": "sync",
+      "resolution": "dynamic",
+      "condition": null,
+      "labels": [],
+      "async_": false
+    }
+  ]
+}

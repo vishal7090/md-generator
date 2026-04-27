@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "mdengine contributors" }]
-keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip", "url", "html", "youtube", "playwright", "database", "openapi"]
+keywords = ["markdown", "pdf", "docx", "pptx", "xlsx", "ocr", "zip", "url", "html", "youtube", "playwright", "database", "openapi", "codeflow"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -111,6 +111,10 @@ openapi = [
   "prance>=23.6.0",
   "openapi-spec-validator>=0.7.0",
 ]
+codeflow = [
+  "networkx>=3.2.0",
+  "javalang>=0.13.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -132,6 +136,7 @@ dev = [
   "mdengine[db]",
   "mdengine[graph]",
   "mdengine[openapi]",
+  "mdengine[codeflow]",
 ]
 all = [
   "pymupdf>=1.24.0",
@@ -196,6 +201,10 @@ md-graph-mcp = "md_generator.graph.api.mcp_server:main"
 md-openapi = "md_generator.openapi.cli.main:main"
 md-openapi-api = "md_generator.openapi.api.run:main"
 md-openapi-mcp = "md_generator.openapi.api.mcp_server:main"
+md-codeflow = "md_generator.codeflow.cli.main:main"
+codeflow = "md_generator.codeflow.cli.main:main"
+md-codeflow-api = "md_generator.codeflow.api.run:main"
+md-codeflow-mcp = "md_generator.codeflow.api.mcp_server:main"
 mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]
@@ -224,5 +233,6 @@ testpaths = [
   "db-to-md/tests",
   "graph-to-md/tests",
   "openapi-to-md/tests",
+  "codeflow-to-md/tests",
 ]
 markers = ["integration: optional dependency or slower checks"]

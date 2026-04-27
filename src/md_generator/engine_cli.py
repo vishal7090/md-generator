@@ -7,7 +7,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) < 1:
         print(
-            "Usage: mdengine db-to-md ... | mdengine graph-to-md ... | mdengine openapi-to-md generate ...",
+            "Usage: mdengine db-to-md ... | mdengine graph-to-md ... | mdengine openapi-to-md generate ... | mdengine codeflow-to-md scan ...",
             file=sys.stderr,
         )
         return 2
@@ -23,8 +23,12 @@ def main(argv: list[str] | None = None) -> int:
         from md_generator.openapi.cli.main import main as openapi_main
 
         return openapi_main(argv[1:])
+    if argv[0] == "codeflow-to-md":
+        from md_generator.codeflow.cli.main import main as cf_main
+
+        return cf_main(argv[1:])
     print(
-        "Usage: mdengine db-to-md ... | mdengine graph-to-md ... | mdengine openapi-to-md generate ...",
+        "Usage: mdengine db-to-md ... | mdengine graph-to-md ... | mdengine openapi-to-md generate ... | mdengine codeflow-to-md scan ...",
         file=sys.stderr,
     )
     return 2
