@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    {
+      "id": "demo.py::__main__",
+      "type": "entry",
+      "class_name": null,
+      "method_name": "__main__",
+      "file_path": "demo.py",
+      "language": "python",
+      "entry_kind": "main",
+      "entry_label": "Python __main__ guard"
+    }
+  ],
+  "edges": []
+}
