@@ -1,0 +1,203 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleVersion": "0.7.0",
+  "description": "Maps mdengine distributable skill folders and agent files. Paths are relative to the directory containing this file (ai/).",
+  "distribution": {
+    "pypi": "mdengine",
+    "importPackage": "md_generator"
+  },
+  "skills": {
+    "mdengine-ai-global": {
+      "type": "global",
+      "area": null,
+      "directory": "skills/mdengine-ai-global",
+      "skillFile": "skills/mdengine-ai-global/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-global/references/example.md"
+    },
+    "mdengine-reference": {
+      "type": "reference",
+      "area": null,
+      "directory": "skills/mdengine-reference",
+      "skillFile": "skills/mdengine-reference/SKILL.md",
+      "exampleFile": "skills/mdengine-reference/references/example.md"
+    },
+    "mdengine-ai-archive": {
+      "type": "area",
+      "area": "archive",
+      "directory": "skills/mdengine-ai-archive",
+      "skillFile": "skills/mdengine-ai-archive/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-archive/references/example.md"
+    },
+    "mdengine-ai-codeflow": {
+      "type": "area",
+      "area": "codeflow",
+      "directory": "skills/mdengine-ai-codeflow",
+      "skillFile": "skills/mdengine-ai-codeflow/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-codeflow/references/example.md"
+    },
+    "mdengine-ai-db": {
+      "type": "area",
+      "area": "db",
+      "directory": "skills/mdengine-ai-db",
+      "skillFile": "skills/mdengine-ai-db/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-db/references/example.md"
+    },
+    "mdengine-ai-graph": {
+      "type": "area",
+      "area": "graph",
+      "directory": "skills/mdengine-ai-graph",
+      "skillFile": "skills/mdengine-ai-graph/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-graph/references/example.md"
+    },
+    "mdengine-ai-image": {
+      "type": "area",
+      "area": "image",
+      "directory": "skills/mdengine-ai-image",
+      "skillFile": "skills/mdengine-ai-image/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-image/references/example.md"
+    },
+    "mdengine-ai-media": {
+      "type": "area",
+      "area": "media",
+      "directory": "skills/mdengine-ai-media",
+      "skillFile": "skills/mdengine-ai-media/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-media/references/example.md"
+    },
+    "mdengine-ai-openapi": {
+      "type": "area",
+      "area": "openapi",
+      "directory": "skills/mdengine-ai-openapi",
+      "skillFile": "skills/mdengine-ai-openapi/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-openapi/references/example.md"
+    },
+    "mdengine-ai-pdf": {
+      "type": "area",
+      "area": "pdf",
+      "directory": "skills/mdengine-ai-pdf",
+      "skillFile": "skills/mdengine-ai-pdf/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-pdf/references/example.md"
+    },
+    "mdengine-ai-playwright": {
+      "type": "area",
+      "area": "playwright",
+      "directory": "skills/mdengine-ai-playwright",
+      "skillFile": "skills/mdengine-ai-playwright/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-playwright/references/example.md"
+    },
+    "mdengine-ai-ppt": {
+      "type": "area",
+      "area": "ppt",
+      "directory": "skills/mdengine-ai-ppt",
+      "skillFile": "skills/mdengine-ai-ppt/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-ppt/references/example.md"
+    },
+    "mdengine-ai-text": {
+      "type": "area",
+      "area": "text",
+      "directory": "skills/mdengine-ai-text",
+      "skillFile": "skills/mdengine-ai-text/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-text/references/example.md"
+    },
+    "mdengine-ai-url": {
+      "type": "area",
+      "area": "url",
+      "directory": "skills/mdengine-ai-url",
+      "skillFile": "skills/mdengine-ai-url/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-url/references/example.md"
+    },
+    "mdengine-ai-word": {
+      "type": "area",
+      "area": "word",
+      "directory": "skills/mdengine-ai-word",
+      "skillFile": "skills/mdengine-ai-word/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-word/references/example.md"
+    },
+    "mdengine-ai-xlsx": {
+      "type": "area",
+      "area": "xlsx",
+      "directory": "skills/mdengine-ai-xlsx",
+      "skillFile": "skills/mdengine-ai-xlsx/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-xlsx/references/example.md"
+    }
+  },
+  "agents": {
+    "mdengine-global-agent": {
+      "file": "agents/mdengine-global-agent.md",
+      "pairedSkill": "mdengine-ai-global"
+    },
+    "mdengine-archive-agent": {
+      "file": "agents/mdengine-archive-agent.md",
+      "pairedSkill": "mdengine-ai-archive"
+    },
+    "mdengine-codeflow-agent": {
+      "file": "agents/mdengine-codeflow-agent.md",
+      "pairedSkill": "mdengine-ai-codeflow"
+    },
+    "mdengine-db-agent": {
+      "file": "agents/mdengine-db-agent.md",
+      "pairedSkill": "mdengine-ai-db"
+    },
+    "mdengine-graph-agent": {
+      "file": "agents/mdengine-graph-agent.md",
+      "pairedSkill": "mdengine-ai-graph"
+    },
+    "mdengine-image-agent": {
+      "file": "agents/mdengine-image-agent.md",
+      "pairedSkill": "mdengine-ai-image"
+    },
+    "mdengine-media-agent": {
+      "file": "agents/mdengine-media-agent.md",
+      "pairedSkill": "mdengine-ai-media"
+    },
+    "mdengine-openapi-agent": {
+      "file": "agents/mdengine-openapi-agent.md",
+      "pairedSkill": "mdengine-ai-openapi"
+    },
+    "mdengine-pdf-agent": {
+      "file": "agents/mdengine-pdf-agent.md",
+      "pairedSkill": "mdengine-ai-pdf"
+    },
+    "mdengine-playwright-agent": {
+      "file": "agents/mdengine-playwright-agent.md",
+      "pairedSkill": "mdengine-ai-playwright"
+    },
+    "mdengine-ppt-agent": {
+      "file": "agents/mdengine-ppt-agent.md",
+      "pairedSkill": "mdengine-ai-ppt"
+    },
+    "mdengine-text-agent": {
+      "file": "agents/mdengine-text-agent.md",
+      "pairedSkill": "mdengine-ai-text"
+    },
+    "mdengine-url-agent": {
+      "file": "agents/mdengine-url-agent.md",
+      "pairedSkill": "mdengine-ai-url"
+    },
+    "mdengine-word-agent": {
+      "file": "agents/mdengine-word-agent.md",
+      "pairedSkill": "mdengine-ai-word"
+    },
+    "mdengine-xlsx-agent": {
+      "file": "agents/mdengine-xlsx-agent.md",
+      "pairedSkill": "mdengine-ai-xlsx"
+    }
+  },
+  "skillOrder": [
+    "mdengine-ai-global",
+    "mdengine-reference",
+    "mdengine-ai-archive",
+    "mdengine-ai-codeflow",
+    "mdengine-ai-db",
+    "mdengine-ai-graph",
+    "mdengine-ai-image",
+    "mdengine-ai-media",
+    "mdengine-ai-openapi",
+    "mdengine-ai-pdf",
+    "mdengine-ai-playwright",
+    "mdengine-ai-ppt",
+    "mdengine-ai-text",
+    "mdengine-ai-url",
+    "mdengine-ai-word",
+    "mdengine-ai-xlsx"
+  ]
+}

@@ -215,8 +215,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Cursor
-.cursor
+# Cursor (local IDE state) — keep versioned agent skills under .cursor/skills/
+.cursor/*
 
 # Docs
 docs
