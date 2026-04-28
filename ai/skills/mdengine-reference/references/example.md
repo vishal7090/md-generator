@@ -1,5 +1,7 @@
 # Examples — CLI / extras pairing
 
+Full **`project.scripts`** list: [entrypoints.md](entrypoints.md). HTTP routes, ports, MCP tools, env prefixes: [http-api-mcp.md](http-api-mcp.md).
+
 ```bash
 pip install "mdengine[pdf]"
 md-pdf report.pdf out.md

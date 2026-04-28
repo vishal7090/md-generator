@@ -36,7 +36,7 @@ Use **`--help`** on each CLI for flags. Prefer CLIs for automation unless you ar
 
 ## APIs / MCP
 
-If this area ships `*-api` or `*-mcp` scripts, install the matching **`api`** / **`mcp`** extras and read **`--help`** or the upstream README for ports, routes, and tool names.
+`md-openapi-api` (**8015** / `OPENAPI_TO_MD_PORT`), `POST /openapi-to-md/generate`, `/health`, MCP at **`/mcp`**; standalone **`md-openapi-mcp`** tool names: [http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md).
 
 ## See also
 

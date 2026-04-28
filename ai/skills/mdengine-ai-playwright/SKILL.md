@@ -36,7 +36,7 @@ Use **`--help`** on each CLI for flags. Prefer CLIs for automation unless you ar
 
 ## APIs / MCP
 
-If this area ships `*-api` or `*-mcp` scripts, install the matching **`api`** / **`mcp`** extras and read **`--help`** or the upstream README for ports, routes, and tool names.
+`md-playwright-api` (default **8014** / `PLAYWRIGHT_TO_MD_API_PORT`), `md-playwright-mcp`, HTTP MCP mount **`/mcp`**, and env prefix `PLAYWRIGHT_TO_MD_*`: [http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md).
 
 ## See also
 

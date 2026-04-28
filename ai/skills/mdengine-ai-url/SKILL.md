@@ -36,7 +36,7 @@ Use **`--help`** on each CLI for flags. Prefer CLIs for automation unless you ar
 
 ## APIs / MCP
 
-If this area ships `*-api` or `*-mcp` scripts, install the matching **`api`** / **`mcp`** extras and read **`--help`** or the upstream README for ports, routes, and tool names.
+URL FastAPI follows the shared **`/convert/sync`** job pattern (JSON `url` / `urls`); MCP via `python -m md_generator.url.api.mcp_server`; env prefix `URL_TO_MD_*`: [http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md). See **url-to-md** README for request bodies.
 
 ## See also
 

@@ -36,7 +36,7 @@ Use **`--help`** on each CLI for flags. Prefer CLIs for automation unless you ar
 
 ## APIs / MCP
 
-If this area ships `*-api` or `*-mcp` scripts, install the matching **`api`** / **`mcp`** extras and read **`--help`** or the upstream README for ports, routes, and tool names.
+`md-codeflow-api`, `md-codeflow-mcp`, and any FastAPI factory patterns follow the same install extras as other services; see [http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md) and **`md-codeflow-api --help`** / **`md-codeflow-mcp --help`** for the version you installed.
 
 ## See also
 

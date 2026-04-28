@@ -19,7 +19,12 @@
       "area": null,
       "directory": "skills/mdengine-reference",
       "skillFile": "skills/mdengine-reference/SKILL.md",
-      "exampleFile": "skills/mdengine-reference/references/example.md"
+      "exampleFile": "skills/mdengine-reference/references/example.md",
+      "referenceDocuments": [
+        "skills/mdengine-reference/references/example.md",
+        "skills/mdengine-reference/references/entrypoints.md",
+        "skills/mdengine-reference/references/http-api-mcp.md"
+      ]
     },
     "mdengine-ai-archive": {
       "type": "area",

@@ -35,7 +35,7 @@ Use **`--help`** on each CLI for flags. Prefer CLIs for automation unless you ar
 
 ## APIs / MCP
 
-If this area ships `*-api` or `*-mcp` scripts, install the matching **`api`** / **`mcp`** extras and read **`--help`** or the upstream README for ports, routes, and tool names.
+`md-graph-api` (**8012** / `GRAPH_TO_MD_PORT`), `md-graph-mcp`, job + SSE paths: [http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md). Port clash with **`md-video-api`** — set env vars if both run on one host.
 
 ## See also
 

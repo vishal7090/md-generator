@@ -44,6 +44,7 @@ Machine-readable map of **skill ids** → `skillFile`, `exampleFile`, `directory
 - **`schemaVersion`:** format of this file; bump when fields change.
 - **`bundleVersion`:** should track the **mdengine** skills bundle (align with `mdengine` on PyPI when practical).
 - **`skills`:** keyed by YAML `name` in each `SKILL.md` (e.g. `mdengine-ai-pdf`).
+- **`referenceDocuments`** (optional, on `mdengine-reference`): every markdown file under `references/` for hosts that bundle **CLI + HTTP + MCP** docs (`entrypoints.md`, `http-api-mcp.md`, `example.md`).
 - **`agents`:** keyed by YAML `name` in each agent file; `pairedSkill` links to a `skills` key.
 - **`skillOrder`:** stable ordered list for UIs or batch registration.
 

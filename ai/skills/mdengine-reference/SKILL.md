@@ -10,6 +10,12 @@ version: 0.7.0
 
 Supplements [mdengine-ai-global/SKILL.md](../mdengine-ai-global/SKILL.md). Console scripts come from `[project.scripts]` in the installed distribution.
 
+## Full coverage (CLI + HTTP + MCP)
+
+- **Every console script** (verbatim `project.scripts` mapping): [references/entrypoints.md](references/entrypoints.md)
+- **HTTP APIs, routes, ports, env prefixes, MCP transports and tool names** (from upstream README): [references/http-api-mcp.md](references/http-api-mcp.md)
+- **Copy-paste snippets:** [references/example.md](references/example.md)
+
 ## CLI ↔ typical extras
 
 | Command | Suggested `pip install` |
@@ -37,4 +43,4 @@ All library code lives under **`md_generator`** (e.g. `md_generator.pdf`, `md_ge
 
 ## Examples
 
-Concrete commands: [references/example.md](references/example.md).
+Concrete commands: [references/example.md](references/example.md). For exhaustive CLI rows and REST/MCP tables, use the links under **Full coverage** above.

@@ -36,7 +36,7 @@ Use **`--help`** on each CLI for flags. Prefer CLIs for automation unless you ar
 
 ## APIs / MCP
 
-If this area ships `*-api` or `*-mcp` scripts, install the matching **`api`** / **`mcp`** extras and read **`--help`** or the upstream README for ports, routes, and tool names.
+`md-db-api` (default port **8010**, `DB_TO_MD_PORT`), `md-db-mcp`, SQLite upload routes, and SSE job paths are summarized in [http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md). Install **`mdengine[db,api,mcp]`**; use `md-db-api --help` / `md-db-mcp --help` for the exact build you have.
 
 ## See also
 

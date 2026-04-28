@@ -36,7 +36,7 @@ Use **`--help`** on each CLI for flags. Prefer CLIs for automation unless you ar
 
 ## APIs / MCP
 
-If this area ships `*-api` or `*-mcp` scripts, install the matching **`api`** / **`mcp`** extras and read **`--help`** or the upstream README for ports, routes, and tool names.
+Audio / video / YouTube REST (`/convert/sync`, `/convert/jobs`, …), default ports **8011/8012/8013**, JSON body for YouTube, MCP tools (`transcribe_*`, `youtube_url_to_markdown`), and transports: [http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md).
 
 ## See also
 

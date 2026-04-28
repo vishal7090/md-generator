@@ -60,7 +60,7 @@ md-url https://example.com/page ./out --artifact-layout
 
 Aggregated **`mdengine`** CLI routes subcommands (e.g. `mdengine db-to-md …`, `mdengine graph-to-md …`, `mdengine openapi-to-md generate …`). Prefer **`md-*`** aliases when documented for your scenario.
 
-See [CLI reference](../mdengine-reference/SKILL.md) for CLI ↔ extra mapping.
+See [CLI reference](../mdengine-reference/SKILL.md) for CLI ↔ extra mapping. That skill also ships **[entrypoints.md](../mdengine-reference/references/entrypoints.md)** (all `project.scripts`) and **[http-api-mcp.md](../mdengine-reference/references/http-api-mcp.md)** (REST patterns, `md-db-api` / graph / openapi / media routes, MCP tools, env prefixes).
 
 ## HTTP APIs and MCP
 
@@ -76,4 +76,4 @@ If you maintain **mdengine** from a git clone, editable install and tests live i
 
 ## Additional resources
 
-- [CLI reference](../mdengine-reference/SKILL.md) — CLI and import cheat sheet
+- [CLI reference](../mdengine-reference/SKILL.md) — CLI and import cheat sheet + full **entrypoints** / **HTTP+MCP** reference files
