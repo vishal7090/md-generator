@@ -1,13 +1,13 @@
 # mdengine
 
-Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoint (.pptx)**, **Excel (.xlsx/.xlsm)**, **images** (OCR), **plain text / JSON / XML**, **ZIP archives**, **audio / video** (Whisper transcription → Markdown), **database metadata** (SQL + Mongo), and **graphs** (Neo4j / NetworkX → Markdown) into **Markdown** (and related assets). Install only the extras you need; everything imports under the **`md_generator`** package.
+Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoint (.pptx)**, **Excel (.xlsx/.xlsm)**, **images** (OCR), **plain text / JSON / XML**, **ZIP archives**, **audio / video** (Whisper transcription → Markdown), **database metadata** (SQL + Mongo), **graphs** (Neo4j / NetworkX → Markdown), **OpenAPI** specs, **Playwright**-captured web pages (including SPAs), and **source code** (codeflow → architecture Markdown) into **Markdown** (and related assets). Install only the extras you need; everything imports under the **`md_generator`** package.
 
 - **PyPI name:** `mdengine` (import package: `md_generator`)
 - **Source:** [github.com/vishal7090/md-generator](https://github.com/vishal7090/md-generator)
 - **Python:** 3.10+
 - **License:** [MIT](LICENSE)
 
-**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [Audio and video](#audio-and-video-to-markdown) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
+**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [Audio and video](#audio-and-video-to-markdown) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [AI skills & `mdengine-skill`](#ai-skills-and-mdengine-skill-cli) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ---
 
@@ -81,6 +81,8 @@ pip install "mdengine[all]"
 | `graph` | **Graph → Markdown** (Neo4j Bolt + NetworkX GraphML/GML): `networkx`, `neo4j`, `pyyaml` |
 | `dev` | pytest + API/MCP test helpers |
 | `all` | Large superset of dependencies (use only if you need everything) |
+| `skill-openai` | Optional helpers for OpenAI-style calls with assembled skill context (`tools.mdengine_skill`) |
+| `skill-rag-chroma` | Optional Chroma-based RAG over skill markdown (`MasterAgent.ask(..., use_rag=True)`) |
 
 Nested ZIP and office files inside archives require the corresponding extras (e.g. `archive` plus `pdf` for PDFs inside a ZIP).
 
@@ -590,6 +592,87 @@ Install **`mdengine[mcp]`** (and usually **`[api]`** when using HTTP) for MCP-re
 
 ---
 
+## AI skills and `mdengine-skill` CLI
+
+The repo ships **distributable AI skills** under [`ai/`](ai/) (Markdown skills, [`ai/registry.json`](ai/registry.json), routing, and [`ai/dependency-graph.json`](ai/dependency-graph.json)). A small SDK in [`tools/mdengine_skill/`](tools/mdengine_skill/) assembles **grounded context** from a natural-language query for Cursor, Claude, OpenAI-style hosts, or your own LLM pipeline.
+
+**Further detail:** [ai/README.md](ai/README.md) (layout, registry schema, master agent).
+
+### Regenerate skills, graph, and bundled data
+
+From the **repository root** (requires the repo checkout; not needed for end users who only `pip install mdengine`):
+
+```bash
+# Windows PowerShell
+$env:PYTHONPATH = "."
+python -m tools.skillgen
+```
+
+```bash
+# macOS / Linux
+PYTHONPATH=. python -m tools.skillgen
+```
+
+- Refreshes `ai/skills/**/SKILL.md`, `ai/skills/global-skill.md`, `ai/skills/modules/*.md`, `ai/registry.json` (routing), and `ai/dependency-graph.json`.
+- Copies the same bundle into **`tools/mdengine_skill/data/`** for the installed wheel.
+
+**Incremental** (only area skills touched under `src/md_generator/` since a git ref; global/graph/registry still refresh):
+
+```bash
+PYTHONPATH=. python -m tools.skillgen --since HEAD~1
+```
+
+### Use the live `ai/` tree from a clone (optional)
+
+When developing skills, point the SDK at the repo’s `ai/` directory instead of the copy under `tools/mdengine_skill/data/`:
+
+```powershell
+# PowerShell
+$env:MDENGINE_SKILL_AI_ROOT = (Resolve-Path ".\ai").Path
+```
+
+```bash
+export MDENGINE_SKILL_AI_ROOT="$(pwd)/ai"
+```
+
+### Console: `mdengine-skill`
+
+After `pip install mdengine` (or `pip install -e .` from a clone), the **`mdengine-skill`** entry point is available:
+
+```bash
+mdengine-skill ask "How do I run md-pdf on a file?"
+mdengine-skill export --format openai --query "md-db ERD" -o bundle.json
+mdengine-skill export --format claude --query "playwright"
+mdengine-skill export --format cursor --query "xlsx excel"
+```
+
+- **`ask`** — prints assembled context (Markdown) to stdout.
+- **`export`** — writes OpenAI-style `messages` JSON, a Claude project prompt, or Cursor-style rules markdown (`--output` optional).
+
+One-off override without env var: `mdengine-skill ask "…" --ai-root /path/to/ai`.
+
+### Python API
+
+```python
+from tools.mdengine_skill import MasterAgent, Registry
+
+reg = Registry.load_default()
+agent = MasterAgent(reg)
+result = agent.ask("openapi mcp", use_rag=False)
+print(result.resolved_skill_ids)
+print(result.context_markdown[:2000])
+```
+
+Optional RAG: install **`mdengine[skill-rag-chroma]`**, then `agent.ask(..., use_rag=True)` (falls back to full skills if Chroma is unavailable).
+
+### Tests (skill SDK)
+
+```bash
+PYTHONPATH=src:. python -m pytest mdengine-skill/tests -q
+```
+
+---
+
 ## Development
 
 ```bash
@@ -597,7 +680,7 @@ pip install -e ".[dev,all]"   # or a smaller subset of extras
 python -m pytest
 ```
 
-Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), **`graph-to-md/tests/`**, and **`openapi-to-md/tests/`**; `pyproject.toml` configures `pythonpath = ["src"]` so `md_generator` resolves without a separate `PYTHONPATH`.
+Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), **`graph-to-md/tests/`**, **`openapi-to-md/tests/`**, and **[`mdengine-skill/tests/`](mdengine-skill/tests/)** for the skill SDK; `pyproject.toml` sets `pythonpath = ["src", "."]` so **`md_generator`** and **`tools`** (including `tools.mdengine_skill`) resolve without a manual `PYTHONPATH` when you use `pytest` from the config.
 
 ---
 
@@ -609,6 +692,10 @@ Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/test
 | `CODE_OF_CONDUCT.md` | [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 |
 | `src/md_generator/` | **Library source** (all formats + `api` subpackages); **audio/video** under [`media/audio/`](src/md_generator/media/audio/) and [`media/video/`](src/md_generator/media/video/); **graph-to-md** under [`graph/`](src/md_generator/graph/) |
 | `pyproject.toml` | Packaging, extras, CLI entry points, pytest |
+| `ai/` | **Distributable AI skills** (`SKILL.md` trees, `registry.json`, `dependency-graph.json`); regenerate with `python -m tools.skillgen` |
+| `tools/skillgen/` | **Skill generator** (`python -m tools.skillgen`) — scans `src/md_generator` and `pyproject.toml` |
+| `tools/mdengine_skill/` | **Skill SDK** (`tools.mdengine_skill`): `MasterAgent`, `Registry`, bundled `data/` copy of `ai/` |
+| `mdengine-skill/tests/` | **Pytests** for the skill SDK |
 | `*-to-md/` | **Docs, tests, fixtures**, thin `converter.py` shims, some `run.py` helpers |
 | `README.md` | This document |
 
