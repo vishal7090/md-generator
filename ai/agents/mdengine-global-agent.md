@@ -36,6 +36,7 @@ Help users and integrators succeed with **`pip install mdengine[...]`**: correct
 
 ## Composition
 
+- **Multi-area orchestration:** follow [Master agent](../agent/master-agent.md) for query routing, registry keywords, dependency-graph expansion, and structured responses.
 - Delegate detail to **`agents/mdengine-<area>-agent.md`** when work stays in one product area (e.g. DB only).
 - Escalate to upstream docs when behavior is undocumented here.
 

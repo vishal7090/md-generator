@@ -4,6 +4,9 @@ All versions align with **mdengine** package versioning in `pyproject.toml` unle
 
 ## 0.7.0 — 2026-04-28
 
+- **Skill generator:** `python -m tools.skillgen` regenerates code-derived `skills/mdengine-ai-*/SKILL.md`, `skills/global-skill.md`, `skills/modules/*.md`, `dependency-graph.json`, and syncs bundled skill data to `tools/mdengine_skill/data/` (Python: **`tools.mdengine_skill`**; CLI: **`mdengine-skill`** on the **`mdengine`** distribution).
+- **Registry `1.1.0`:** `routing` block (`keywordRouting`, `moduleSkillId`, `globalSkillFile`, `dependencyGraphFile`) plus **`mdengine-master-agent`** in `agents`.
+- **Master agent:** `agent/master-agent.md` orchestrates multi-area queries using routing + dependency graph.
 - Bootstrap `ai/` tree: `README.md`, `global/` (`AGENT.md`, `SKILL.md`, `reference.md`), and `modules/*` for each top-level package under `src/md_generator/` (`archive`, `codeflow`, `db`, `graph`, `image`, `media`, `openapi`, `pdf`, `playwright`, `ppt`, `text`, `url`, `word`, `xlsx`).
 - **Consumer focus:** Reworked `README`, `global/*`, and all `modules/*` to target teams using **`pip install mdengine[...]`** (console scripts, extras, `md_generator.*` imports, APIs/MCP). Monorepo paths like `src/md_generator/...` are no longer the primary frame; skills are meant to be **shared without binding** upstream source into other teams’ AI tools.
 - **Layout:** Replaced `global/` + `modules/<area>/` with **`ai/agents/`** (named `mdengine-*-agent.md`) and **`ai/skills/`** (named `mdengine-ai-*.md`, plus `mdengine-reference.md`). Cross-links updated.

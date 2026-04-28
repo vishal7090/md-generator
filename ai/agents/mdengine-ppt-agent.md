@@ -18,6 +18,10 @@ Guide operators and integrators to the **published** commands and APIs for **Pow
 - **In scope:** installed behavior, flags, extras, ports, MCP tools as documented upstream.
 - **Out of scope:** internal file paths inside the mdengine git repository (e.g. `src/...`); those concern upstream maintainers only.
 
+## Orchestration
+
+- **Multi-area queries:** use [Master agent](../agent/master-agent.md) (registry routing + `dependency-graph.json` + response schema).
+
 ## Handoff
 
 - **Global agent:** [mdengine-global-agent.md](mdengine-global-agent.md) for cross-area installs and version pinning.

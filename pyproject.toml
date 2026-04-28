@@ -132,6 +132,9 @@ api = [
   "pydantic-settings>=2.0.0",
 ]
 mcp = ["mcp>=1.2.0", "fastmcp>=2.3.0"]
+# Optional: AI skill bundle helpers (tools.mdengine_skill)
+skill-openai = ["openai>=1.30.0"]
+skill-rag-chroma = ["chromadb>=0.4.22"]
 dev = [
   "pytest>=8.0.0",
   "httpx>=0.27.0",
@@ -216,18 +219,22 @@ codeflow = "md_generator.codeflow.cli.main:main"
 md-codeflow-api = "md_generator.codeflow.api.run:main"
 md-codeflow-mcp = "md_generator.codeflow.api.mcp_server:main"
 mdengine = "md_generator.engine_cli:main"
+mdengine-skill = "tools.mdengine_skill.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["md_generator*", "tools*"]
 
 [tool.setuptools.package-data]
 "md_generator.db.config" = ["*.yaml"]
 "md_generator.graph.config" = ["*.yaml"]
 "md_generator.openapi.config" = ["*.yaml"]
+"tools.mdengine_skill" = ["data/**/*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = [
+  "mdengine-skill/tests",
   "pdf-to-md/tests",
   "word-to-md/tests",
   "ppt-to-md/tests",
