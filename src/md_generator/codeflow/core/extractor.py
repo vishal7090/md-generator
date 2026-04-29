@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+
+import networkx as nx
 
 from md_generator.codeflow.analyzers.flow_analyzer import slice_from_entry
 from md_generator.codeflow.detectors.entry_detector import apply_entry_detectors, resolve_entry_symbol_ids
@@ -27,10 +30,167 @@ from md_generator.codeflow.generators.mermaid import write_flow_mermaid
 from md_generator.codeflow.generators.sequence import write_sequence_mermaid
 from md_generator.codeflow.ingestion.loader import LoadedWorkspace, collect_source_files
 from md_generator.codeflow.lang_dispatch import lang_for_path, normalize_language_filter, should_parse_file_lang
-from md_generator.codeflow.models.ir import FileParseResult
-from md_generator.codeflow.rules.collector import collect_business_rules
+from md_generator.codeflow.models.ir import EntryRecord, FileParseResult
 from md_generator.codeflow.parsers.base import ParserRegistry, register_defaults
 from md_generator.codeflow.core.run_config import ScanConfig
+
+
+def _read_entries_file(path: Path) -> list[str]:
+    out: list[str] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        out.append(s)
+    return out
+
+
+def _method_symbols_for_emit(g: nx.DiGraph, max_n: int, filter_re: str | None) -> list[str]:
+    pat = re.compile(filter_re) if filter_re else None
+    cand: list[str] = []
+    for n, d in g.nodes(data=True):
+        if not isinstance(n, str) or "::" not in n:
+            continue
+        if n.startswith("unknown::"):
+            continue
+        if d.get("type") not in ("method", "entry"):
+            continue
+        if pat and not pat.search(n):
+            continue
+        cand.append(n)
+    cand = sorted(set(cand))
+    return cand[:max_n]
+
+
+def _root_symbol_ids(g: nx.DiGraph, max_n: int) -> list[str]:
+    roots: list[str] = []
+    for n in g.nodes():
+        if not isinstance(n, str) or "::" not in n:
+            continue
+        if n.startswith("unknown::"):
+            continue
+        if g.in_degree(n) != 0:
+            continue
+        d = g.nodes[n]
+        if d.get("type") not in ("method", "entry"):
+            continue
+        roots.append(n)
+    return sorted(roots)[:max_n]
+
+
+def _first_n_graph_symbol_ids(g: nx.DiGraph, max_n: int) -> list[str]:
+    ids = sorted(
+        n for n in g.nodes() if isinstance(n, str) and "::" in n and not n.startswith("unknown::")
+    )
+    return ids[:max_n]
+
+
+def _resolve_scan_entry_ids(cfg: ScanConfig, g: nx.DiGraph, all_entries: list[EntryRecord]) -> tuple[list[str], list[str]]:
+    warnings: list[str] = []
+
+    if cfg.entry:
+        ids = [e for e in cfg.entry if e in g]
+        missing = [e for e in cfg.entry if e not in g]
+        if missing:
+            warnings.append(
+                f"{len(missing)} explicit entry symbol(s) not found in graph (showing up to 5): {missing[:5]}",
+            )
+        if ids:
+            return ids, warnings
+        warnings.append("No explicit entry symbols resolved in graph; trying other strategies.")
+
+    if cfg.entries_file:
+        raw = _read_entries_file(cfg.entries_file.resolve())
+        ids = [x for x in raw if x in g]
+        missing = [x for x in raw if x not in g]
+        if missing:
+            warnings.append(
+                f"{len(missing)} entries_file symbol(s) not in graph (showing up to 5): {missing[:5]}",
+            )
+        if ids:
+            return ids, warnings
+        warnings.append("entries_file produced no symbols present in graph; trying other strategies.")
+
+    if cfg.emit_entry_per_method:
+        cap = cfg.emit_entry_max if cfg.emit_entry_max is not None else 10_000
+        ids = _method_symbols_for_emit(g, cap, cfg.emit_entry_filter)
+        if len(ids) >= cap:
+            warnings.append(f"emit_entry_per_method capped at {cap} symbols (emit_entry_max).")
+        if not ids:
+            warnings.append("emit_entry_per_method produced no method symbols in graph.")
+        return ids, warnings
+
+    entry_ids = resolve_entry_symbol_ids(None, all_entries)
+    entry_ids = [e for e in entry_ids if e in g]
+    if entry_ids:
+        return entry_ids, warnings
+
+    entry_ids = [n for n, d in g.nodes(data=True) if d.get("type") == "entry" and n in g]
+    if entry_ids:
+        return entry_ids, warnings
+
+    if cfg.entry_fallback == "none":
+        warnings.append(
+            "No entry symbols after detection (entry_fallback=none). No per-entry output directories.",
+        )
+        return [], warnings
+
+    if cfg.entry_fallback == "roots":
+        entry_ids = _root_symbol_ids(g, cfg.entry_fallback_max)
+        if entry_ids:
+            warnings.append(
+                "No detected entries; used entry_fallback=roots (in-degree 0 symbols). Prefer --entry or --entries-file.",
+            )
+        else:
+            warnings.append(
+                "entry_fallback=roots found no suitable roots; set --entry, --entries-file, or entry_fallback=first_n.",
+            )
+        return entry_ids, warnings
+
+    entry_ids = _first_n_graph_symbol_ids(g, cfg.entry_fallback_max)
+    if entry_ids:
+        warnings.append(
+            "No detected entries; used entry_fallback=first_n (lexicographic). Prefer --entry or --entries-file.",
+        )
+    return entry_ids, warnings
+
+
+def _write_scan_summary(
+    path: Path,
+    *,
+    project_root: Path,
+    parse_count: int,
+    g: nx.DiGraph,
+    entry_ids: list[str],
+    emitted_slugs: int,
+    warnings: list[str],
+    cfg: ScanConfig,
+) -> None:
+    lines = [
+        "# Scan summary",
+        "",
+        f"- **Project root:** `{project_root.resolve().as_posix()}`",
+        f"- **Files parsed:** {parse_count}",
+        f"- **Graph nodes:** {g.number_of_nodes()}",
+        f"- **Graph edges:** {g.number_of_edges()}",
+        f"- **Resolved entry ids:** {len(entry_ids)}",
+        f"- **Output slugs emitted:** {emitted_slugs}",
+        f"- **entry_fallback:** `{cfg.entry_fallback}`",
+        f"- **emit_entry_per_method:** {cfg.emit_entry_per_method}",
+        "",
+    ]
+    if warnings:
+        lines.append("## Warnings")
+        lines.append("")
+        for w in warnings:
+            lines.append(f"- {w}")
+        lines.append("")
+    lines.append(
+        "Static graph only: unresolved dynamic calls appear as `unknown::*` nodes. "
+        "Large repos should use `--emit-entry-max` / `entry_fallback_max` to limit output.",
+    )
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[FileParseResult]:
@@ -62,21 +222,16 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
     out.mkdir(parents=True, exist_ok=True)
 
     all_entries = [e for pr in parse_results for e in pr.entries]
-    entry_ids = resolve_entry_symbol_ids(cfg.entry, all_entries)
+    entry_ids, scan_warnings = _resolve_scan_entry_ids(cfg, g, all_entries)
 
     fmts = {x.strip().lower() for x in cfg.formats}
-
-    entry_ids = [e for e in entry_ids if e in g]
-    if not entry_ids:
-        entry_ids = [n for n, d in g.nodes(data=True) if d.get("type") == "entry" and n in g]
-    if not entry_ids:
-        entry_ids = [n for n in g.nodes()][: min(10, max(1, g.number_of_nodes()))]
 
     entry_ids = sort_entry_ids(entry_ids, g, all_entries)
     entry_by_symbol = {e.symbol_id: e for e in all_entries}
 
     include_map = cfg.parsed_include()
     overview_rows: list[tuple[str, str, str, str, str]] = []
+    emitted_slugs = 0
 
     for eid in entry_ids:
         if include_map:
@@ -84,6 +239,7 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             ek = ndata.get("entry_kind")
             if ek and ek not in include_map:
                 continue
+        emitted_slugs += 1
         sl = slice_from_entry(g, eid, cfg.depth)
         slug = _slug(eid)
         sub = out / slug
@@ -93,6 +249,8 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             write_flow_markdown(sub / "flow.md", eid, sl, g)
             rules = None
             if cfg.business_rules:
+                from md_generator.codeflow.rules.collector import collect_business_rules
+
                 rules = collect_business_rules(
                     eid,
                     sl,
@@ -150,6 +308,18 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             project_hint=f"Project: `{ws.root.resolve().as_posix()}`",
         )
 
+    if cfg.write_scan_summary:
+        _write_scan_summary(
+            out / "scan-summary.md",
+            project_root=ws.root,
+            parse_count=len(parse_results),
+            g=g,
+            entry_ids=entry_ids,
+            emitted_slugs=emitted_slugs,
+            warnings=scan_warnings,
+            cfg=cfg,
+        )
+
     return out
 
 
@@ -181,6 +351,13 @@ def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> byt
             business_rules=cfg.business_rules,
             business_rules_sql=cfg.business_rules_sql,
             business_rules_combined=cfg.business_rules_combined,
+            entry_fallback=cfg.entry_fallback,
+            entry_fallback_max=cfg.entry_fallback_max,
+            emit_entry_per_method=cfg.emit_entry_per_method,
+            emit_entry_max=cfg.emit_entry_max,
+            emit_entry_filter=cfg.emit_entry_filter,
+            entries_file=cfg.entries_file,
+            write_scan_summary=cfg.write_scan_summary,
         )
         run_scan(cfg2, workspace=wc)
         buf = td / "bundle.zip"

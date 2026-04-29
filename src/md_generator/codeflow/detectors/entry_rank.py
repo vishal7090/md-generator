@@ -13,6 +13,7 @@ def entry_kind_rank(kind: str | None) -> int:
         return 90
     order = {
         EntryKind.API_REST.value: 0,
+        EntryKind.PORTLET.value: 0,
         EntryKind.KAFKA.value: 1,
         EntryKind.QUEUE.value: 1,
         EntryKind.SCHEDULER.value: 2,

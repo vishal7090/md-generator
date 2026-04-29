@@ -21,6 +21,7 @@ def type_label_for_kind(kind: str | None) -> str:
         return "Other"
     mapping = {
         EntryKind.API_REST.value: "API",
+        EntryKind.PORTLET.value: "Portlet",
         EntryKind.KAFKA.value: "Event",
         EntryKind.QUEUE.value: "Event",
         EntryKind.SCHEDULER.value: "Scheduler",

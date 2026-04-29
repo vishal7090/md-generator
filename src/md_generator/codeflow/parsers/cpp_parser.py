@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from md_generator.codeflow.models.ir import CallSite, FileParseResult
+from md_generator.codeflow.models.ir import BranchPoint, CallSite, FileParseResult
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,52 @@ def _rel_key(path: Path, root: Path) -> str:
 
 def _sid(key: str, name: str) -> str:
     return f"{key}::{name}"
+
+
+def _trim_cpp(source: bytes, s: str, max_len: int = 120) -> str:
+    del source
+    s = " ".join(s.split())
+    return s if len(s) <= max_len else s[: max_len - 1] + "…"
+
+
+def _enclosing_condition_cpp(source: bytes, call: object) -> str | None:
+    cur = getattr(call, "parent", None)
+    while cur is not None:
+        t = cur.type
+        if t == "if_statement":
+            for ch in cur.children:
+                if ch.type == "condition_clause":
+                    return _trim_cpp(source, source[ch.start_byte : ch.end_byte].decode("utf-8", errors="replace"))
+            return "if (…)"
+        if t == "while_statement":
+            for ch in cur.children:
+                if ch.type == "condition_clause":
+                    return _trim_cpp(source, source[ch.start_byte : ch.end_byte].decode("utf-8", errors="replace"))
+            return "while (…)"
+        if t == "for_statement":
+            cond = cur.child_by_field_name("condition") if hasattr(cur, "child_by_field_name") else None
+            if cond:
+                return _trim_cpp(source, source[cond.start_byte : cond.end_byte].decode("utf-8", errors="replace"))
+            return "for (…)"
+        if t == "conditional_expression":
+            cond = cur.child_by_field_name("condition")
+            if cond:
+                return _trim_cpp(source, source[cond.start_byte : cond.end_byte].decode("utf-8", errors="replace"))
+            return "… ? … : …"
+        if t == "case_statement":
+            bits: list[str] = []
+            for c in cur.children:
+                if c.type == ":":
+                    break
+                if c.type == "default":
+                    return "default:"
+                if c.type != "case":
+                    bits.append(source[c.start_byte : c.end_byte].decode("utf-8", errors="replace").strip())
+            return _trim_cpp(source, "case " + " ".join(bits)) if bits else "case …"
+        if t == "function_definition":
+            break
+        cur = getattr(cur, "parent", None)
+    return None
 
 
 class CppParser:
@@ -135,9 +181,44 @@ class CppParser:
                     for ch in body.children:
                         walk(ch, class_name, fid)
                 return
+            if t == "if_statement" and cur_fn:
+                lab = "if (…)"
+                for ch in node.children:
+                    if ch.type == "condition_clause":
+                        lab = _trim_cpp(source, text(ch))
+                        break
+                fr.branches.append(
+                    BranchPoint(caller_id=cur_fn, kind="if", label=lab, line=node.start_point[0] + 1),
+                )
+            if t == "switch_statement" and cur_fn:
+                for ch in node.children:
+                    if ch.type != "compound_statement":
+                        continue
+                    for stmt in ch.children:
+                        if stmt.type != "case_statement":
+                            continue
+                        bits: list[str] = []
+                        for x in stmt.children:
+                            if x.type == ":":
+                                break
+                            if x.type == "default":
+                                bits = ["default"]
+                                break
+                            if x.type != "case":
+                                bits.append(text(x).strip())
+                        lab = _trim_cpp(source, "case " + " ".join(bits)) if bits else "case …"
+                        fr.branches.append(
+                            BranchPoint(
+                                caller_id=cur_fn,
+                                kind="switch",
+                                label=lab,
+                                line=stmt.start_point[0] + 1,
+                            ),
+                        )
             if t == "call_expression" and cur_fn:
                 fn = node.child_by_field_name("function")
                 callee = text(fn).strip() if fn else "unknown"
+                cond = _enclosing_condition_cpp(source, node)
                 fr.calls.append(
                     CallSite(
                         caller_id=cur_fn,
@@ -145,8 +226,8 @@ class CppParser:
                         resolution="dynamic",
                         is_async=False,
                         line=node.start_point[0] + 1,
-                        condition_label=None,
-                    )
+                        condition_label=cond,
+                    ),
                 )
             for c in node.children:
                 walk(c, class_name, cur_fn)

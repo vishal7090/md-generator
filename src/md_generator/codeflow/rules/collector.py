@@ -12,6 +12,8 @@ from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
 from md_generator.codeflow.core.run_config import ScanConfig
 from md_generator.codeflow.models.ir import BusinessRule, FileParseResult
 from md_generator.codeflow.parsers.python_parser import _rel_key
+from md_generator.codeflow.rules.cpp_rules import extract_cpp_method_rules
+from md_generator.codeflow.rules.java_rules import extract_java_method_rules
 
 
 def _sid_py(file_key: str, class_name: str | None, method_name: str) -> str:
@@ -246,8 +248,11 @@ def collect_business_rules(
 
     rules: list[BusinessRule] = []
 
+    slice_nodes = set(sl.nodes)
     for fr in parse_results:
-        rules.extend(fr.rules)
+        for r in fr.rules:
+            if r.symbol_id is None or r.symbol_id in slice_nodes:
+                rules.append(r)
 
     rules.extend(_rules_from_slice_edges(sl, g))
 
@@ -256,9 +261,14 @@ def collect_business_rules(
 
     for rel_fp, sids in by_file.items():
         fr = pr_by_key.get(rel_fp)
-        if not fr or fr.language != "python":
+        if not fr:
             continue
-        rules.extend(_extract_python_method_rules(fr.path, project_root, sids))
+        if fr.language == "python":
+            rules.extend(_extract_python_method_rules(fr.path, project_root, sids))
+        elif fr.language == "java":
+            rules.extend(extract_java_method_rules(fr.path, project_root, sids))
+        elif fr.language == "cpp":
+            rules.extend(extract_cpp_method_rules(fr.path, project_root, sids))
 
     for bp in (b for fr in parse_results for b in fr.branches):
         if bp.caller_id not in sl.nodes:

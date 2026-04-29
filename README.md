@@ -705,6 +705,23 @@ python -m pytest
 
 Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), **`graph-to-md/tests/`**, **`openapi-to-md/tests/`**, and **[`tool-assistant/tests/`](tool-assistant/tests/)** for the skill SDK; `pyproject.toml` sets `pythonpath = ["src"]` so **`md_generator`** (including **`md_generator.tools.assistant`**) resolves without a manual `PYTHONPATH` when you use `pytest` from the config.
 
+### Codeflow (`md_generator.codeflow`)
+
+Static call graphs and per-entry Markdown/Mermaid/JSON for **Python**, **Java** (Spring REST, Kafka listeners, **Liferay / JSR-286 portlets**), and other parsers. Output is **static only** (`graph-full.json` can include unresolved `unknown::*` callees).
+
+- **Entries:** use `--entry` (comma-separated symbol ids), **`--entries-file`** (one id per line, `#` comments allowed), or rely on detectors. **`--emit-entry-per-method`** emits one output directory per method/entry symbol; cap volume with **`--emit-entry-max`** (default cap **10000** when the flag is set and max is omitted). **`--entry-fallback`** `none` \| `roots` \| `first_n` controls behavior when nothing is detected (default **`roots`**, in-degree 0 symbols, limited by **`--entry-fallback-max`**).
+- **Java flow:** edges can record **branch context** from enclosing `if`, `switch`, or ternary expressions (`condition` / `labels` on edges). **Business rules** Markdown picks up validation-style **`@NotNull`** / **`@Size`** / **`@Valid`** (name heuristics) and throws such as **`IllegalArgumentException`**.
+- **JavaScript / TypeScript / TSX:** Tree-sitter adds **`condition_label`** from enclosing control flow, **`fr.branches`** for `if` / `switch`, and **`fr.rules`** for **`throw`** and common **`assert` / `console.assert`** calls (slice-scoped in the collector).
+- **C++ (tree-sitter path):** **`condition_label`** on calls, **`fr.branches`** for `if` / `switch`, plus **`rules/cpp_rules.py`** for **`throw`** / **`assert`** when methods appear in the slice. (Clang-only parses still get throw/assert via the same extractor when tree-sitter is installed.)
+- **Go:** the **`codeflow_go_dump`** helper emits **`condition`** on calls inside `if` / `switch` / `for` / `range`, and **`rules`** for **`panic`** / **`log.Fatal` / `Fatalf`**; **`fr.rules`** are merged slice-scoped.
+- **PHP:** the **`codeflow_php_dump`** helper adds **`condition`** on calls (from enclosing **`if` / `case`**), **`rules`** for **`throw`**, and **`branches`** for documentation. Install PHP + Composer deps under `codeflow-to-md/examples/codeflow_php_dump` (or mirror under `tools/codeflow_php_dump`) for PHP scans.
+- **Kinds / filters:** `--include` accepts aliases such as **`portlet`** / **`liferay`** for portlet entries.
+- **Operators:** each run writes **`scan-summary.md`** at the output root (counts, warnings, fallback mode) unless **`--no-scan-summary`** is set.
+
+```bash
+python -m md_generator.codeflow.cli.main scan path/to/src --output ./codeflow-out --lang java
+```
+
 ---
 
 ## Repository layout

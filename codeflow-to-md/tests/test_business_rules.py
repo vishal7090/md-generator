@@ -347,12 +347,24 @@ def test_scan_config_dump_load_roundtrip_business_flags(tmp_path: Path) -> None:
         business_rules=False,
         business_rules_sql=True,
         business_rules_combined=False,
+        entry_fallback="none",
+        entry_fallback_max=12,
+        emit_entry_per_method=True,
+        emit_entry_max=100,
+        emit_entry_filter="Foo",
+        write_scan_summary=False,
     )
     raw = json.dumps(scan_config_dump(cfg))
     cfg2 = scan_config_load(json.loads(raw))
     assert cfg2.business_rules is False
     assert cfg2.business_rules_sql is True
     assert cfg2.business_rules_combined is False
+    assert cfg2.entry_fallback == "none"
+    assert cfg2.entry_fallback_max == 12
+    assert cfg2.emit_entry_per_method is True
+    assert cfg2.emit_entry_max == 100
+    assert cfg2.emit_entry_filter == "Foo"
+    assert cfg2.write_scan_summary is False
 
 
 def test_cli_no_business_rules_combined(tmp_path: Path) -> None:

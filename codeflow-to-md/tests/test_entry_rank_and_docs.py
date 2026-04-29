@@ -19,6 +19,7 @@ from md_generator.codeflow.models.ir import EntryKind, EntryRecord, FileParseRes
 
 
 def test_entry_kind_rank_order() -> None:
+    assert entry_kind_rank(EntryKind.API_REST.value) == entry_kind_rank(EntryKind.PORTLET.value)
     assert entry_kind_rank(EntryKind.API_REST.value) < entry_kind_rank(EntryKind.KAFKA.value)
     assert entry_kind_rank(EntryKind.KAFKA.value) == entry_kind_rank(EntryKind.QUEUE.value)
     assert entry_kind_rank(EntryKind.SCHEDULER.value) < entry_kind_rank(EntryKind.MAIN.value)

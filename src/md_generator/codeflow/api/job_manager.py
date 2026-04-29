@@ -118,6 +118,13 @@ class CodeflowJobManager:
             business_rules=cfg_template.business_rules,
             business_rules_sql=cfg_template.business_rules_sql,
             business_rules_combined=cfg_template.business_rules_combined,
+            entry_fallback=cfg_template.entry_fallback,
+            entry_fallback_max=cfg_template.entry_fallback_max,
+            emit_entry_per_method=cfg_template.emit_entry_per_method,
+            emit_entry_max=cfg_template.emit_entry_max,
+            emit_entry_filter=cfg_template.emit_entry_filter,
+            entries_file=cfg_template.entries_file,
+            write_scan_summary=cfg_template.write_scan_summary,
         )
         now = time.time()
         cfg_dump = json.dumps(scan_config_dump(cfg), sort_keys=True)

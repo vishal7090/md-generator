@@ -6,6 +6,7 @@ from pathlib import Path
 
 from md_generator.codeflow.detectors.api_detector import detect_api_entries
 from md_generator.codeflow.detectors.kafka_detector import detect_kafka_entries
+from md_generator.codeflow.detectors.liferay_portlet_detector import detect_liferay_portlet_entries
 from md_generator.codeflow.models.ir import EntryKind, EntryRecord, FileParseResult
 
 
@@ -17,6 +18,7 @@ def apply_entry_detectors(paths: list[Path], project_root: Path, results: list[F
         if not pr:
             continue
         pr.entries.extend(detect_api_entries(p, project_root))
+        pr.entries.extend(detect_liferay_portlet_entries(p, project_root))
         pr.entries.extend(detect_kafka_entries(p, project_root))
 
 

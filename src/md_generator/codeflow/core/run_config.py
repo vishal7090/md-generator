@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 @dataclass
@@ -24,6 +25,14 @@ class ScanConfig:
     business_rules: bool = True
     business_rules_sql: bool = False
     business_rules_combined: bool = True
+    # Entry resolution: ``none`` = no heuristic roots when nothing detected; ``roots`` = in-degree 0 symbols; ``first_n`` = lexicographic first nodes (legacy-ish).
+    entry_fallback: Literal["none", "roots", "first_n"] = "roots"
+    entry_fallback_max: int = 20
+    emit_entry_per_method: bool = False
+    emit_entry_max: int | None = None
+    emit_entry_filter: str | None = None
+    entries_file: Path | None = None
+    write_scan_summary: bool = True
 
     def parsed_include(self) -> set[str] | None:
         if not self.include or not str(self.include).strip():

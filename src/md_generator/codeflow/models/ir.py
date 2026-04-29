@@ -25,6 +25,7 @@ class BusinessRule:
 
 class EntryKind(str, Enum):
     API_REST = "api_rest"
+    PORTLET = "portlet"
     MAIN = "main"
     CLI = "cli"
     SCHEDULER = "scheduler"

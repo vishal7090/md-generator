@@ -28,6 +28,8 @@ def _normalize_include(raw: str | None) -> str | None:
     mapping = {
         "api": "api_rest",
         "rest": "api_rest",
+        "portlet": "portlet",
+        "liferay": "portlet",
         "event": "kafka",
         "kafka": "kafka",
         "main": "main",
@@ -83,6 +85,47 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Write entry.combined.md (entry.md + business_rules.md) (default: on)",
     )
+    scan.add_argument(
+        "--entry-fallback",
+        choices=["none", "roots", "first_n"],
+        default="roots",
+        help="When no detected entries: none | in-degree-0 roots | first N symbols (default: roots)",
+    )
+    scan.add_argument(
+        "--entry-fallback-max",
+        type=int,
+        default=20,
+        help="Max symbols when using roots or first_n fallback (default: 20)",
+    )
+    scan.add_argument(
+        "--emit-entry-per-method",
+        action="store_true",
+        default=False,
+        help="Emit one output slug per method/entry symbol (use --emit-entry-max to cap)",
+    )
+    scan.add_argument(
+        "--emit-entry-max",
+        type=int,
+        default=None,
+        help="Cap for --emit-entry-per-method (default: 10000 when flag set and unset)",
+    )
+    scan.add_argument(
+        "--emit-entry-filter",
+        default=None,
+        help="Regex filter on symbol_id when using --emit-entry-per-method",
+    )
+    scan.add_argument(
+        "--entries-file",
+        type=Path,
+        default=None,
+        help="File with one symbol_id per line (# comments allowed); resolved paths",
+    )
+    scan.add_argument(
+        "--no-scan-summary",
+        action="store_true",
+        default=False,
+        help="Skip writing scan-summary.md at output root",
+    )
     return p
 
 
@@ -103,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         out = ns.output
         if out is None:
             out = Path.cwd() / "codeflow-out"
+        entries_file = Path(ns.entries_file).expanduser().resolve() if ns.entries_file else None
         cfg = ScanConfig(
             project_root=root,
             paths_override=paths_override,
@@ -120,6 +164,13 @@ def main(argv: list[str] | None = None) -> int:
             business_rules=bool(ns.business_rules),
             business_rules_sql=bool(ns.business_rules_sql),
             business_rules_combined=bool(ns.business_rules_combined),
+            entry_fallback=ns.entry_fallback,
+            entry_fallback_max=int(ns.entry_fallback_max),
+            emit_entry_per_method=bool(ns.emit_entry_per_method),
+            emit_entry_max=ns.emit_entry_max,
+            emit_entry_filter=ns.emit_entry_filter,
+            entries_file=entries_file,
+            write_scan_summary=not bool(ns.no_scan_summary),
         )
         run_scan(cfg, workspace=ws)
         print(str(cfg.output_path.resolve()))

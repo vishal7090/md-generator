@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,16 @@ class AnalyzeOptions(BaseModel):
     business_rules: bool | None = Field(default=None, description="If set, enable/disable business rule MD")
     business_rules_sql: bool | None = Field(default=None, description="If true, scan *.sql for triggers")
     business_rules_combined: bool | None = Field(default=None, description="If set, control entry.combined.md")
+    entry_fallback: Literal["none", "roots", "first_n"] | None = Field(
+        default=None,
+        description="none | roots | first_n when no detected entries",
+    )
+    entry_fallback_max: int | None = None
+    emit_entry_per_method: bool | None = None
+    emit_entry_max: int | None = None
+    emit_entry_filter: str | None = None
+    entries_file: str | None = Field(default=None, description="Path to file of symbol ids (workspace-relative or absolute)")
+    write_scan_summary: bool | None = Field(default=None, description="If false, skip scan-summary.md")
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -31,6 +41,19 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     br = True if not raw or raw.business_rules is None else raw.business_rules
     br_sql = False if not raw or raw.business_rules_sql is None else raw.business_rules_sql
     br_comb = True if not raw or raw.business_rules_combined is None else raw.business_rules_combined
+    ef = "roots" if not raw or raw.entry_fallback is None else raw.entry_fallback
+    efm = 20 if not raw or raw.entry_fallback_max is None else int(raw.entry_fallback_max)
+    epm = False if not raw or raw.emit_entry_per_method is None else bool(raw.emit_entry_per_method)
+    emx = None if not raw else raw.emit_entry_max
+    efilt = None if not raw else raw.emit_entry_filter
+    efpath = None
+    if raw and raw.entries_file:
+        efpath = Path(raw.entries_file)
+        if not efpath.is_absolute():
+            efpath = (workspace_src / efpath).resolve()
+        else:
+            efpath = efpath.resolve()
+    wss = True if not raw or raw.write_scan_summary is None else bool(raw.write_scan_summary)
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -43,6 +66,13 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         business_rules=br,
         business_rules_sql=br_sql,
         business_rules_combined=br_comb,
+        entry_fallback=ef,  # type: ignore[arg-type]
+        entry_fallback_max=efm,
+        emit_entry_per_method=epm,
+        emit_entry_max=emx,
+        emit_entry_filter=efilt,
+        entries_file=efpath,
+        write_scan_summary=wss,
     )
 
 
@@ -71,6 +101,13 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "business_rules": cfg.business_rules,
         "business_rules_sql": cfg.business_rules_sql,
         "business_rules_combined": cfg.business_rules_combined,
+        "entry_fallback": cfg.entry_fallback,
+        "entry_fallback_max": cfg.entry_fallback_max,
+        "emit_entry_per_method": cfg.emit_entry_per_method,
+        "emit_entry_max": cfg.emit_entry_max,
+        "emit_entry_filter": cfg.emit_entry_filter,
+        "entries_file": str(cfg.entries_file) if cfg.entries_file else None,
+        "write_scan_summary": cfg.write_scan_summary,
     }
 
 
@@ -93,4 +130,11 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         business_rules=bool(data.get("business_rules", True)),
         business_rules_sql=bool(data.get("business_rules_sql", False)),
         business_rules_combined=bool(data.get("business_rules_combined", True)),
+        entry_fallback=data.get("entry_fallback", "roots"),  # type: ignore[arg-type]
+        entry_fallback_max=int(data.get("entry_fallback_max", 20)),
+        emit_entry_per_method=bool(data.get("emit_entry_per_method", False)),
+        emit_entry_max=data.get("emit_entry_max"),
+        emit_entry_filter=data.get("emit_entry_filter"),
+        entries_file=Path(data["entries_file"]) if data.get("entries_file") else None,
+        write_scan_summary=bool(data.get("write_scan_summary", True)),
     )

@@ -1,4 +1,4 @@
-"""Go parsing via ``go/parser`` (JSON bridge in ``tools/codeflow_go_dump``)."""
+"""Go parsing via ``go/parser`` (JSON bridge in ``tools/codeflow_go_dump`` or ``codeflow-to-md/examples/codeflow_go_dump``)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from md_generator.codeflow.models.ir import CallSite, CallResolution, FileParseResult
+from md_generator.codeflow.models.ir import BusinessRule, CallSite, CallResolution, FileParseResult
 from md_generator.codeflow.utils.tools_root import find_tools_dir
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,7 @@ class GoParser:
             return fr
         if isinstance(data, dict) and data.get("error"):
             return fr
+        fp = str(path.resolve())
         for fn in data.get("funcs", []) or []:
             fid = fn.get("id")
             if fid and fid not in fr.symbol_ids:
@@ -66,6 +67,8 @@ class GoParser:
                 callee = str(c.get("Callee") or c.get("callee") or "")
                 caller = str(c.get("Caller") or c.get("caller") or fid or "")
                 line = int(c.get("Line") or c.get("line") or 0)
+                cond_raw = c.get("condition") or c.get("Condition")
+                cond = str(cond_raw).strip() if cond_raw else None
                 res: CallResolution = "dynamic"
                 if "." not in callee and callee.isidentifier():
                     res = "static"
@@ -76,7 +79,24 @@ class GoParser:
                         resolution=res,
                         is_async=False,
                         line=line,
-                        condition_label=None,
-                    )
+                        condition_label=cond,
+                    ),
+                )
+            for r in fn.get("rules") or []:
+                if not isinstance(r, dict):
+                    continue
+                sid = str(r.get("symbolId") or r.get("symbol_id") or "")
+                if not sid:
+                    continue
+                fr.rules.append(
+                    BusinessRule(
+                        source="validation",
+                        symbol_id=sid,
+                        file_path=fp,
+                        line=int(r.get("line") or 0) or 1,
+                        title=str(r.get("title") or "Rule"),
+                        detail=str(r.get("detail") or ""),
+                        confidence="medium",
+                    ),
                 )
         return fr
