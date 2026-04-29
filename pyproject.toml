@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdengine"
-version = "0.7.0"
+version = "0.8.0"
 description = "Convert PDF, Office, images, audio, video, text/JSON/XML, ZIP archives, web URLs, databases, graphs, and OpenAPI specs to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -132,6 +132,9 @@ api = [
   "pydantic-settings>=2.0.0",
 ]
 mcp = ["mcp>=1.2.0", "fastmcp>=2.3.0"]
+# Optional: AI skill bundle helpers (md_generator.tools.assistant)
+skill-openai = ["openai>=1.30.0"]
+skill-rag-chroma = ["chromadb>=0.4.22"]
 dev = [
   "pytest>=8.0.0",
   "httpx>=0.27.0",
@@ -219,15 +222,18 @@ mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["md_generator*"]
 
 [tool.setuptools.package-data]
 "md_generator.db.config" = ["*.yaml"]
 "md_generator.graph.config" = ["*.yaml"]
 "md_generator.openapi.config" = ["*.yaml"]
+"md_generator.tools.assistant" = ["data/**/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = [
+  "tool-assistant/tests",
   "pdf-to-md/tests",
   "word-to-md/tests",
   "ppt-to-md/tests",
