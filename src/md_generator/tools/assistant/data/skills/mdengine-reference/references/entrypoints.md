@@ -38,10 +38,9 @@ Source: **`mdengine`** `pyproject.toml` — every script installed on `PATH` aft
 | `md-codeflow-api` | `md_generator.codeflow.api.run:main` |
 | `md-codeflow-mcp` | `md_generator.codeflow.api.mcp_server:main` |
 | `mdengine` | `md_generator.engine_cli:main` |
-| `mdengine-skill` | `md_generator.tools.assistant.cli:main` | Optional legacy script: **`mdengine-skill ask`** / **`export`**. Prefer **`mdengine ai assist`** / **`mdengine ai export`** (same `mdengine` entry point). |
 
 **Note:** Format converters also expose **Uvicorn `app`** targets and **`python -m …mcp_server`** runners that are not separate `project.scripts` rows — see [http-api-mcp.md](http-api-mcp.md).
 
-**AI context:** **`mdengine ai assist "…"`** prints assembled skill Markdown to stdout; **`mdengine ai export --format openai|claude|cursor --query "…"`** exports for that host (`-o` file optional). Same flags as the legacy `mdengine-skill` subcommands (`--rag`, `--ai-root`).
+**AI context:** **`mdengine ai assist "…"`** prints assembled skill Markdown to stdout; **`mdengine ai export --format openai|claude|cursor --query "…"`** exports for that host (`-o` file optional). Flags: **`--rag`**, **`--ai-root`**.
 
 **Skill bundle (maintainers):** **`mdengine skill build`** regenerates `ai/` skills and syncs bundled data into the package (optional **`--since GIT_REF`**, **`--root PATH`**). Equivalent to **`PYTHONPATH=src python -m md_generator.tools.skill_builder`** from a checkout.

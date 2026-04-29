@@ -71,26 +71,3 @@ def run_export(argv: list[str] | None, *, prog: str | None = None) -> int:
         if not out.endswith("\n"):
             sys.stdout.write("\n")
     return 0
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Legacy entry point for ``mdengine-skill`` (``ask`` / ``export``). Prefer ``mdengine ai assist`` / ``mdengine ai export``."""
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv:
-        print(
-            "Usage: mdengine-skill ask … | mdengine-skill export …",
-            file=sys.stderr,
-        )
-        print("Prefer: mdengine ai assist … | mdengine ai export …", file=sys.stderr)
-        return 2
-    cmd, rest = argv[0], argv[1:]
-    if cmd == "ask":
-        return run_assist(rest, prog="mdengine-skill ask")
-    if cmd == "export":
-        return run_export(rest, prog="mdengine-skill export")
-    print(f"Unknown command {cmd!r}. Expected 'ask' or 'export'.", file=sys.stderr)
-    return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

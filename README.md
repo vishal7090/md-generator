@@ -598,9 +598,13 @@ The repo ships **distributable AI skills** under [`ai/`](ai/) (Markdown skills, 
 
 **Further detail:** [ai/README.md](ai/README.md) (layout, registry schema, master agent).
 
+**PyPI installs:** `mdengine ai assist` and `mdengine ai export` read the **bundled** skill data shipped with **`md_generator.tools.assistant`** unless **`MDENGINE_SKILL_AI_ROOT`** points at another directory (for example the repo’s [`ai/`](ai/) while developing). You do **not** need **`mdengine skill build`** unless you maintain this repository and want to regenerate that bundle.
+
+Script index (all `project.scripts`): [`ai/skills/mdengine-reference/references/entrypoints.md`](ai/skills/mdengine-reference/references/entrypoints.md).
+
 ### Regenerate skills, graph, and bundled data
 
-From the **repository root** (requires the repo checkout; not needed for end users who only `pip install mdengine`):
+**Maintainers / repo clones.** From the **repository root**, refresh generated files under [`ai/`](ai/) and copy the bundle into **`src/md_generator/tools/assistant/data/`** for packaging:
 
 ```bash
 # Windows PowerShell
@@ -628,6 +632,12 @@ mdengine skill build --since HEAD~1
 PYTHONPATH=src python -m md_generator.tools.skill_builder --since HEAD~1
 ```
 
+**Custom repo root** (CI or non-default cwd):
+
+```bash
+mdengine skill build --root /path/to/md-generator
+```
+
 ### Use the live `ai/` tree from a clone (optional)
 
 When developing skills, point the SDK at the repo’s `ai/` directory instead of the copy under `src/md_generator/tools/assistant/data/`:
@@ -643,21 +653,26 @@ export MDENGINE_SKILL_AI_ROOT="$(pwd)/ai"
 
 ### Console: `mdengine ai assist` and `mdengine ai export`
 
-After `pip install mdengine` (or `pip install -e .` from a clone), use the **`mdengine`** entry point:
+After `pip install mdengine` (or `pip install -e .` from a clone), use the **`mdengine`** entry point (no separate AI script is installed).
+
+- **`mdengine ai assist`** — prints a single **Markdown** context (selected skills + global architecture) to **stdout**, meant to paste into an LLM or pipe to a file.
+- **`mdengine ai export`** — prints **host-shaped** output to stdout, or writes with **`-o` / `--output`**: OpenAI **`messages`** JSON (`--format openai`), a Claude-style project prompt (`claude`), or Cursor-style rules Markdown (`cursor`).
+
+**Flags (both subcommands):** **`--rag`** — use optional Chroma RAG when **`mdengine[skill-rag-chroma]`** is installed (falls back to full skills if Chroma is unavailable). **`--ai-root PATH`** — same effect as **`MDENGINE_SKILL_AI_ROOT`** for that run only.
+
+**Discover flags:** `mdengine ai assist --help` · `mdengine ai export --help`
+
+**`ai export` arguments:** **`--format`** `openai` \| `claude` \| `cursor` (required) · **`--query`** `…` (required) · **`-o` / `--output`** `file` (optional; default stdout).
 
 ```bash
 mdengine ai assist "How do I run md-pdf on a file?"
+mdengine ai assist "openapi mcp" --rag
 mdengine ai export --format openai --query "md-db ERD" -o bundle.json
 mdengine ai export --format claude --query "playwright"
 mdengine ai export --format cursor --query "xlsx excel"
 ```
 
-- **`ai assist`** — prints assembled context (Markdown) to stdout.
-- **`ai export`** — writes OpenAI-style `messages` JSON, a Claude project prompt, or Cursor-style rules markdown (`--output` optional).
-
 One-off override without env var: `mdengine ai assist "…" --ai-root /path/to/ai`.
-
-The optional **`mdengine-skill`** script still accepts the legacy subcommands **`ask`** and **`export`** (same behavior); prefer **`mdengine ai assist`** / **`mdengine ai export`**.
 
 ### Python API
 
@@ -671,7 +686,7 @@ print(result.resolved_skill_ids)
 print(result.context_markdown[:2000])
 ```
 
-Optional RAG: install **`mdengine[skill-rag-chroma]`**, then `agent.ask(..., use_rag=True)` (falls back to full skills if Chroma is unavailable).
+Optional RAG: install **`mdengine[skill-rag-chroma]`**, then `agent.ask(..., use_rag=True)` (falls back to full skills if Chroma is unavailable). The same optional stack is used by **`mdengine ai assist --rag`** and **`mdengine ai export … --rag`**.
 
 ### Tests (skill SDK)
 

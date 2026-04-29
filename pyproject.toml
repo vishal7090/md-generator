@@ -219,7 +219,6 @@ codeflow = "md_generator.codeflow.cli.main:main"
 md-codeflow-api = "md_generator.codeflow.api.run:main"
 md-codeflow-mcp = "md_generator.codeflow.api.mcp_server:main"
 mdengine = "md_generator.engine_cli:main"
-mdengine-skill = "md_generator.tools.assistant.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
