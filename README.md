@@ -7,7 +7,7 @@ Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoin
 - **Python:** 3.10+
 - **License:** [MIT](LICENSE)
 
-**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [Audio and video](#audio-and-video-to-markdown) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [AI skills & `mdengine-skill`](#ai-skills-and-mdengine-skill-cli) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
+**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [Audio and video](#audio-and-video-to-markdown) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [AI assistant CLI](#ai-assistant-cli) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ---
 
@@ -81,7 +81,7 @@ pip install "mdengine[all]"
 | `graph` | **Graph → Markdown** (Neo4j Bolt + NetworkX GraphML/GML): `networkx`, `neo4j`, `pyyaml` |
 | `dev` | pytest + API/MCP test helpers |
 | `all` | Large superset of dependencies (use only if you need everything) |
-| `skill-openai` | Optional helpers for OpenAI-style calls with assembled skill context (`tools.mdengine_skill`) |
+| `skill-openai` | Optional helpers for OpenAI-style calls with assembled skill context (`md_generator.tools.assistant`) |
 | `skill-rag-chroma` | Optional Chroma-based RAG over skill markdown (`MasterAgent.ask(..., use_rag=True)`) |
 
 Nested ZIP and office files inside archives require the corresponding extras (e.g. `archive` plus `pdf` for PDFs inside a ZIP).
@@ -139,7 +139,7 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-openapi` | `md_generator.openapi.cli.main:main` | `pip install "mdengine[openapi]"` then `md-openapi generate --file openapi.yaml --output ./docs` (or `mdengine openapi-to-md generate …`) |
 | `md-openapi-api` | `md_generator.openapi.api.run:main` | FastAPI on port **8015** (`OPENAPI_TO_MD_PORT`): `POST /openapi-to-md/generate` (OpenAPI upload → ZIP), `/health`, MCP at **`/mcp`** |
 | `md-openapi-mcp` | `md_generator.openapi.api.mcp_server:main` | Standalone MCP: `api_validate_openapi_yaml`, `api_generate_readme_markdown`, `api_run_sync_zip_base64` |
-| `mdengine` | `md_generator.engine_cli:main` | `mdengine db-to-md …` / `mdengine graph-to-md …` / `mdengine openapi-to-md generate …` |
+| `mdengine` | `md_generator.engine_cli:main` | `mdengine ai assist …`, `mdengine ai export …`, `mdengine skill build …`, `mdengine db-to-md …`, `mdengine graph-to-md …`, `mdengine openapi-to-md generate …` |
 
 **openapi-to-md (`md-openapi`):** OpenAPI **3.x** is parsed directly; **Swagger 2.0** (`swagger: "2.0"`) documents are **converted in-process** to OpenAPI 3.0.3 (deterministic, in-repo converter) before `$ref` resolution. Edge-heavy specs (unusual OAuth2 flows, vendor extensions) may still need fixes after conversion.
 
@@ -592,9 +592,9 @@ Install **`mdengine[mcp]`** (and usually **`[api]`** when using HTTP) for MCP-re
 
 ---
 
-## AI skills and `mdengine-skill` CLI
+## AI assistant CLI
 
-The repo ships **distributable AI skills** under [`ai/`](ai/) (Markdown skills, [`ai/registry.json`](ai/registry.json), routing, and [`ai/dependency-graph.json`](ai/dependency-graph.json)). A small SDK in [`tools/mdengine_skill/`](tools/mdengine_skill/) assembles **grounded context** from a natural-language query for Cursor, Claude, OpenAI-style hosts, or your own LLM pipeline.
+The repo ships **distributable AI skills** under [`ai/`](ai/) (Markdown skills, [`ai/registry.json`](ai/registry.json), routing, and [`ai/dependency-graph.json`](ai/dependency-graph.json)). A small SDK in [`src/md_generator/tools/assistant/`](src/md_generator/tools/assistant/) assembles **grounded context** from a natural-language query for Cursor, Claude, OpenAI-style hosts, or your own LLM pipeline.
 
 **Further detail:** [ai/README.md](ai/README.md) (layout, registry schema, master agent).
 
@@ -604,27 +604,33 @@ From the **repository root** (requires the repo checkout; not needed for end use
 
 ```bash
 # Windows PowerShell
-$env:PYTHONPATH = "."
-python -m tools.skillgen
+$env:PYTHONPATH = "src"
+python -m md_generator.tools.skill_builder
 ```
 
 ```bash
 # macOS / Linux
-PYTHONPATH=. python -m tools.skillgen
+PYTHONPATH=src python -m md_generator.tools.skill_builder
 ```
 
+After `pip install -e .`, you can run **`mdengine skill build`** from the repo root without setting `PYTHONPATH` (same as `python -m md_generator.tools.skill_builder` when `PYTHONPATH=src`).
+
 - Refreshes `ai/skills/**/SKILL.md`, `ai/skills/global-skill.md`, `ai/skills/modules/*.md`, `ai/registry.json` (routing), and `ai/dependency-graph.json`.
-- Copies the same bundle into **`tools/mdengine_skill/data/`** for the installed wheel.
+- Copies the same bundle into **`src/md_generator/tools/assistant/data/`** for the installed wheel.
 
 **Incremental** (only area skills touched under `src/md_generator/` since a git ref; global/graph/registry still refresh):
 
 ```bash
-PYTHONPATH=. python -m tools.skillgen --since HEAD~1
+mdengine skill build --since HEAD~1
+```
+
+```bash
+PYTHONPATH=src python -m md_generator.tools.skill_builder --since HEAD~1
 ```
 
 ### Use the live `ai/` tree from a clone (optional)
 
-When developing skills, point the SDK at the repo’s `ai/` directory instead of the copy under `tools/mdengine_skill/data/`:
+When developing skills, point the SDK at the repo’s `ai/` directory instead of the copy under `src/md_generator/tools/assistant/data/`:
 
 ```powershell
 # PowerShell
@@ -635,26 +641,28 @@ $env:MDENGINE_SKILL_AI_ROOT = (Resolve-Path ".\ai").Path
 export MDENGINE_SKILL_AI_ROOT="$(pwd)/ai"
 ```
 
-### Console: `mdengine-skill`
+### Console: `mdengine ai assist` and `mdengine ai export`
 
-After `pip install mdengine` (or `pip install -e .` from a clone), the **`mdengine-skill`** entry point is available:
+After `pip install mdengine` (or `pip install -e .` from a clone), use the **`mdengine`** entry point:
 
 ```bash
-mdengine-skill ask "How do I run md-pdf on a file?"
-mdengine-skill export --format openai --query "md-db ERD" -o bundle.json
-mdengine-skill export --format claude --query "playwright"
-mdengine-skill export --format cursor --query "xlsx excel"
+mdengine ai assist "How do I run md-pdf on a file?"
+mdengine ai export --format openai --query "md-db ERD" -o bundle.json
+mdengine ai export --format claude --query "playwright"
+mdengine ai export --format cursor --query "xlsx excel"
 ```
 
-- **`ask`** — prints assembled context (Markdown) to stdout.
-- **`export`** — writes OpenAI-style `messages` JSON, a Claude project prompt, or Cursor-style rules markdown (`--output` optional).
+- **`ai assist`** — prints assembled context (Markdown) to stdout.
+- **`ai export`** — writes OpenAI-style `messages` JSON, a Claude project prompt, or Cursor-style rules markdown (`--output` optional).
 
-One-off override without env var: `mdengine-skill ask "…" --ai-root /path/to/ai`.
+One-off override without env var: `mdengine ai assist "…" --ai-root /path/to/ai`.
+
+The optional **`mdengine-skill`** script still accepts the legacy subcommands **`ask`** and **`export`** (same behavior); prefer **`mdengine ai assist`** / **`mdengine ai export`**.
 
 ### Python API
 
 ```python
-from tools.mdengine_skill import MasterAgent, Registry
+from md_generator.tools.assistant import MasterAgent, Registry
 
 reg = Registry.load_default()
 agent = MasterAgent(reg)
@@ -668,7 +676,7 @@ Optional RAG: install **`mdengine[skill-rag-chroma]`**, then `agent.ask(..., use
 ### Tests (skill SDK)
 
 ```bash
-PYTHONPATH=src:. python -m pytest mdengine-skill/tests -q
+PYTHONPATH=src python -m pytest tool-assistant/tests -q
 ```
 
 ---
@@ -680,7 +688,7 @@ pip install -e ".[dev,all]"   # or a smaller subset of extras
 python -m pytest
 ```
 
-Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), **`graph-to-md/tests/`**, **`openapi-to-md/tests/`**, and **[`mdengine-skill/tests/`](mdengine-skill/tests/)** for the skill SDK; `pyproject.toml` sets `pythonpath = ["src", "."]` so **`md_generator`** and **`tools`** (including `tools.mdengine_skill`) resolve without a manual `PYTHONPATH` when you use `pytest` from the config.
+Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), **`graph-to-md/tests/`**, **`openapi-to-md/tests/`**, and **[`tool-assistant/tests/`](tool-assistant/tests/)** for the skill SDK; `pyproject.toml` sets `pythonpath = ["src"]` so **`md_generator`** (including **`md_generator.tools.assistant`**) resolves without a manual `PYTHONPATH` when you use `pytest` from the config.
 
 ---
 
@@ -692,10 +700,10 @@ Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/test
 | `CODE_OF_CONDUCT.md` | [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 |
 | `src/md_generator/` | **Library source** (all formats + `api` subpackages); **audio/video** under [`media/audio/`](src/md_generator/media/audio/) and [`media/video/`](src/md_generator/media/video/); **graph-to-md** under [`graph/`](src/md_generator/graph/) |
 | `pyproject.toml` | Packaging, extras, CLI entry points, pytest |
-| `ai/` | **Distributable AI skills** (`SKILL.md` trees, `registry.json`, `dependency-graph.json`); regenerate with `python -m tools.skillgen` |
-| `tools/skillgen/` | **Skill generator** (`python -m tools.skillgen`) — scans `src/md_generator` and `pyproject.toml` |
-| `tools/mdengine_skill/` | **Skill SDK** (`tools.mdengine_skill`): `MasterAgent`, `Registry`, bundled `data/` copy of `ai/` |
-| `mdengine-skill/tests/` | **Pytests** for the skill SDK |
+| `ai/` | **Distributable AI skills** (`SKILL.md` trees, `registry.json`, `dependency-graph.json`); regenerate with `PYTHONPATH=src python -m md_generator.tools.skill_builder` or **`mdengine skill build`** (after `pip install -e .`) |
+| `src/md_generator/tools/skill_builder/` | **Skill generator** — scans `src/md_generator` and `pyproject.toml` |
+| `src/md_generator/tools/assistant/` | **Skill SDK** (`md_generator.tools.assistant`): `MasterAgent`, `Registry`, bundled `data/` copy of `ai/` |
+| `tool-assistant/tests/` | **Pytests** for the assistant SDK (`md_generator.tools.assistant`) |
 | `*-to-md/` | **Docs, tests, fixtures**, thin `converter.py` shims, some `run.py` helpers |
 | `README.md` | This document |
 

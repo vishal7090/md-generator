@@ -51,7 +51,7 @@ Machine-readable map of **skill ids** → `skillFile`, `exampleFile`, `directory
 
 ### Schema 1.1.0 — routing and dependency graph
 
-From **`schemaVersion` `1.1.0`**, [`registry.json`](registry.json) may include a top-level **`routing`** object used by the skill generator, the bundled SDK at [`../tools/mdengine_skill/`](../tools/mdengine_skill/) (import **`tools.mdengine_skill`**; console script **`mdengine-skill`** from **`pip install mdengine`**), and orchestration docs:
+From **`schemaVersion` `1.1.0`**, [`registry.json`](registry.json) may include a top-level **`routing`** object used by the skill generator, the bundled SDK under [`../src/md_generator/tools/assistant/`](../src/md_generator/tools/assistant/) (import **`md_generator.tools.assistant`**; CLI via **`mdengine ai assist`** / **`mdengine ai export`** from **`pip install mdengine`**), and orchestration docs:
 
 | Field | Meaning |
 |-------|---------|
@@ -62,7 +62,7 @@ From **`schemaVersion` `1.1.0`**, [`registry.json`](registry.json) may include a
 
 Regenerate **`dependency-graph.json`**, skill bodies, and routing alignment from the repo with:
 
-`python -m tools.skillgen` (from repository root; see `tools/skillgen/__main__.py`).
+`PYTHONPATH=src python -m md_generator.tools.skill_builder` from the repository root (or **`mdengine skill build`** after `pip install -e .`; see `src/md_generator/tools/skill_builder/__main__.py`).
 
 ## Versioning
 

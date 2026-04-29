@@ -52,7 +52,7 @@ Extract **keywords** (case-insensitive) and match them against `registry.json` �
 Build a single **context bundle** for the downstream LLM:
 
 1. **System preamble** (short): cite that answers must follow the loaded skills and `registry.json` / `dependency-graph.json`.
-2. **Global architecture** — full text of `skills/global-skill.md` (truncated only if host hard-limits; prefer RAG via `tools.mdengine_skill` when available).
+2. **Global architecture** — full text of `skills/global-skill.md` (truncated only if host hard-limits; prefer RAG via `md_generator.tools.assistant` when available).
 3. **Per-area skills** — concatenation of each selected `skills/<id>/SKILL.md` body (after YAML frontmatter).
 4. **Optional** — `skills/mdengine-reference/references/entrypoints.md` or `http-api-mcp.md` paths as pointers if `api_mcp` intent.
 
@@ -70,8 +70,8 @@ Avoid generic filler; every actionable line should tie to a cited skill section 
 
 ## Tooling
 
-- **Repository / CI:** run `python -m tools.skillgen` after changing `src/md_generator` or `pyproject.toml` scripts.
-- **Programmatic:** install **`mdengine`** (`pip install mdengine`) and use `from tools.mdengine_skill import MasterAgent, Registry` — `MasterAgent.ask(query)` / CLI **`mdengine-skill export`** (see `tools/mdengine_skill/`).
+- **Repository / CI:** run `PYTHONPATH=src python -m md_generator.tools.skill_builder` (or **`mdengine skill build`**) after changing `src/md_generator` or `pyproject.toml` scripts.
+- **Programmatic:** install **`mdengine`** (`pip install mdengine`) and use `from md_generator.tools.assistant import MasterAgent, Registry` — `MasterAgent.ask(query)` / CLI **`mdengine ai export`** (see `src/md_generator/tools/assistant/`).
 
 ## Relationship to area agents
 

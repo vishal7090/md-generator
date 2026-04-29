@@ -4,7 +4,7 @@ All versions align with **mdengine** package versioning in `pyproject.toml` unle
 
 ## 0.7.0 — 2026-04-28
 
-- **Skill generator:** `python -m tools.skillgen` regenerates code-derived `skills/mdengine-ai-*/SKILL.md`, `skills/global-skill.md`, `skills/modules/*.md`, `dependency-graph.json`, and syncs bundled skill data to `tools/mdengine_skill/data/` (Python: **`tools.mdengine_skill`**; CLI: **`mdengine-skill`** on the **`mdengine`** distribution).
+- **Skill generator:** `PYTHONPATH=src python -m md_generator.tools.skill_builder` (or **`mdengine skill build`**) regenerates code-derived `skills/mdengine-ai-*/SKILL.md`, `skills/global-skill.md`, `skills/modules/*.md`, `dependency-graph.json`, and syncs bundled skill data to `src/md_generator/tools/assistant/data/` (Python: **`md_generator.tools.assistant`**; CLI: **`mdengine ai assist`** / **`mdengine ai export`** on the **`mdengine`** distribution).
 - **Registry `1.1.0`:** `routing` block (`keywordRouting`, `moduleSkillId`, `globalSkillFile`, `dependencyGraphFile`) plus **`mdengine-master-agent`** in `agents`.
 - **Master agent:** `agent/master-agent.md` orchestrates multi-area queries using routing + dependency graph.
 - Bootstrap `ai/` tree: `README.md`, `global/` (`AGENT.md`, `SKILL.md`, `reference.md`), and `modules/*` for each top-level package under `src/md_generator/` (`archive`, `codeflow`, `db`, `graph`, `image`, `media`, `openapi`, `pdf`, `playwright`, `ppt`, `text`, `url`, `word`, `xlsx`).
