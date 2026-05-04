@@ -199,6 +199,8 @@ def _write_scan_summary(
         f"- **graph_include_structural:** {cfg.graph_include_structural}",
         f"- **intelligence_transitive_callers:** {cfg.intelligence_transitive_callers}",
         f"- **emit_system_graph_stats:** {cfg.emit_system_graph_stats}",
+        f"- **emit_graph_sqlite:** {cfg.emit_graph_sqlite}",
+        f"- **emit_graph_communities:** {cfg.emit_graph_communities}",
         f"- **emit_llm_entry_sidecar:** {cfg.emit_llm_entry_sidecar}",
         "",
     ]
@@ -211,6 +213,12 @@ def _write_scan_summary(
     lines.append(
         "Static graph only: unresolved dynamic calls appear as `unknown::*` nodes. "
         "Large repos should use `--emit-entry-max` / `entry_fallback_max` to limit output.",
+    )
+    lines.append("")
+    lines.append(
+        "**Hybrid signals (no embeddings):** per-entry CFG path enumeration when `--emit-cfg` is on; "
+        "Markdown *Called by* / *Impact* use dependency reachability (calls + structural edges; CONTAINS excluded); "
+        "`graph-communities.json` / `graph.db` when those flags are enabled. Semantic embeddings are not part of this scan.",
     )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -422,6 +430,21 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         if cfg.emit_graph_schema:
             sch = to_stable_schema(g)
             (out / "graph-schema.json").write_text(json.dumps(sch, indent=2), encoding="utf-8")
+        if cfg.emit_graph_communities:
+            from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
+
+            comms = greedy_modularity_file_communities(g)
+            (out / "graph-communities.json").write_text(
+                json.dumps(
+                    {"algorithm": "greedy_modularity", "layer": "file_imports", "communities": comms},
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+    if cfg.emit_graph_sqlite:
+        from md_generator.codeflow.graph.sqlite_export import export_graph_sqlite
+
+        export_graph_sqlite(out / "graph.db", g)
 
     if "md" in fmts and overview_rows:
         write_system_overview(
@@ -506,6 +529,8 @@ def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> byt
             graph_include_structural=cfg.graph_include_structural,
             intelligence_transitive_callers=cfg.intelligence_transitive_callers,
             emit_system_graph_stats=cfg.emit_system_graph_stats,
+            emit_graph_sqlite=cfg.emit_graph_sqlite,
+            emit_graph_communities=cfg.emit_graph_communities,
             emit_llm_entry_sidecar=cfg.emit_llm_entry_sidecar,
         )
         run_scan(cfg2, workspace=wc)

@@ -52,10 +52,16 @@ def write_flow_markdown(
 
     if intelligence_transitive_callers:
         cb = called_by_transitive(g, entry_id, list_cap)
-        cb_blurb = "Transitive callers (ancestors in the **call graph**; static analysis; capped)."
+        cb_blurb = (
+            "Transitive upstream nodes (`nx.ancestors` on **dependency reachability**: "
+            "CALLS + IMPORTS / INHERITS / … when present; excludes CONTAINS; capped)."
+        )
     else:
         cb = called_by_direct(g, entry_id, list_cap)
-        cb_blurb = "Direct callers in the **call graph** (static analysis; capped)."
+        cb_blurb = (
+            "Direct predecessors in **dependency reachability** "
+            "(calls + structural relations when ``--graph-include-structural`` is on; capped)."
+        )
     im = impact_descendants(g, entry_id, list_cap)
     lines.append("## Called By")
     lines.append("")
@@ -67,12 +73,13 @@ def write_flow_markdown(
         if len(cb) >= list_cap:
             lines.append(f"- *…truncated at {list_cap} items.*")
     else:
-        lines.append("*None in call graph (entry missing or no inbound call edges).*")
+        lines.append("*None in dependency reachability graph (entry missing or no inbound edges).*")
     lines.append("")
     lines.append("## Impact")
     lines.append("")
     lines.append(
-        "Transitive callees from this entry in the **call graph** (not the depth slice only; capped).",
+        "Transitive downstream nodes (`nx.descendants` on **dependency reachability**; "
+        "not the depth slice only; capped).",
     )
     lines.append("")
     if im:

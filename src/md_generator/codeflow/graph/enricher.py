@@ -1,10 +1,15 @@
-"""Graph intelligence helpers (call-only subgraph; backward compatible)."""
+"""Graph intelligence helpers (call subgraph + dependency reachability)."""
 
 from __future__ import annotations
 
 import networkx as nx
 
 from md_generator.codeflow.graph import relations as rel
+from md_generator.codeflow.graph.analysis import (
+    called_by_direct_dependency,
+    called_by_transitive_dependency,
+    impact_descendants_dependency,
+)
 
 _REL_CALLS = rel.REL_CALLS
 
@@ -32,23 +37,13 @@ def call_graph_view(g: nx.DiGraph) -> nx.DiGraph:
 
 
 def called_by_direct(g: nx.DiGraph, node_id: str, cap: int) -> list[str]:
-    """Direct callers (predecessors in call graph), sorted, capped."""
-    cg = call_graph_view(g)
-    if node_id not in cg:
-        return []
-    preds = sorted(cg.predecessors(node_id))
-    return list(preds)[:cap]
+    """Direct predecessors in the dependency reachability graph (calls + structural deps), capped."""
+    return called_by_direct_dependency(g, node_id, cap)
 
 
 def called_by_transitive(g: nx.DiGraph, node_id: str, cap: int) -> list[str]:
-    """Transitive callers (``nx.ancestors`` on call-only view), sorted, capped."""
-    cg = call_graph_view(g)
-    if node_id not in cg:
-        return []
-    anc = nx.ancestors(cg, node_id)
-    anc.discard(node_id)
-    out = sorted(anc)
-    return out[:cap]
+    """Transitive predecessors (``nx.ancestors`` on dependency reachability graph), capped."""
+    return called_by_transitive_dependency(g, node_id, cap)
 
 
 def structural_dependency_bullets(g: nx.DiGraph, entry_id: str, cap: int) -> list[str]:
@@ -78,9 +73,5 @@ def structural_dependency_bullets(g: nx.DiGraph, entry_id: str, cap: int) -> lis
 
 
 def impact_descendants(g: nx.DiGraph, node_id: str, cap: int) -> list[str]:
-    """Transitive callees from ``node_id`` in the call graph, sorted, capped."""
-    cg = call_graph_view(g)
-    if node_id not in cg:
-        return []
-    des = sorted(nx.descendants(cg, node_id))
-    return list(des)[:cap]
+    """Transitive successors (``nx.descendants`` on dependency reachability graph), capped."""
+    return impact_descendants_dependency(g, node_id, cap)

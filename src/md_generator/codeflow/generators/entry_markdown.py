@@ -129,6 +129,94 @@ def _graph_inventory_lines(graph: nx.DiGraph, top_n: int = 10) -> list[str]:
     return lines
 
 
+def _system_graph_insights_lines(graph: nx.DiGraph, *, top_n: int = 10, community_preview: int = 8) -> list[str]:
+    """Top modules, file import layer, high-impact symbols, modularity communities."""
+    from md_generator.codeflow.graph.analysis import dependency_reachability_subgraph
+    from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
+
+    lines = [
+        "## System graph view",
+        "",
+        "### Top modules (by method/entry count)",
+        "",
+    ]
+    mod_counts: dict[str, int] = {}
+    for _n, d in graph.nodes(data=True):
+        fp = (d.get("file_path") or "").strip()
+        if not fp:
+            continue
+        if d.get("type") not in ("method", "entry"):
+            continue
+        top = fp.split("/")[0] if "/" in fp else fp
+        mod_counts[top] = mod_counts.get(top, 0) + 1
+    ranked_mod = sorted(mod_counts.items(), key=lambda x: -x[1])[:top_n]
+    if ranked_mod:
+        for m, c in ranked_mod:
+            lines.append(f"- `{m}`: {c} symbols")
+    else:
+        lines.append("- *No file paths on method/entry nodes.*")
+    lines += ["", "### File dependency graph", ""]
+    file_nodes = [n for n in graph.nodes() if isinstance(n, str) and str(n).startswith("file:")]
+    ff_imp = 0
+    for u, v, d in graph.edges(data=True):
+        if d.get("relation") != graph_rel.REL_IMPORTS:
+            continue
+        if (
+            isinstance(u, str)
+            and u.startswith("file:")
+            and isinstance(v, str)
+            and v.startswith("file:")
+        ):
+            ff_imp += 1
+    lines.append(f"- **File nodes:** {len(file_nodes)}")
+    lines.append(f"- **File → file IMPORTS:** {ff_imp}")
+    lines.append("")
+
+    lines += [
+        "### Most impacted nodes (approx.)",
+        "",
+        "Largest downstream reach in the **dependency reachability** graph (CONTAINS excluded); "
+        "candidate set capped for performance.",
+        "",
+    ]
+    dg = dependency_reachability_subgraph(graph)
+    candidates: list[str] = []
+    for n, d in graph.nodes(data=True):
+        if not isinstance(n, str) or "::" not in n or n.startswith("unknown::"):
+            continue
+        if d.get("type") not in ("method", "entry"):
+            continue
+        if n in dg:
+            candidates.append(n)
+    if len(candidates) > 300:
+        candidates = sorted(candidates, key=lambda x: dg.out_degree(x), reverse=True)[:300]
+    scored: list[tuple[str, int]] = []
+    for nid in candidates:
+        scored.append((nid, len(nx.descendants(dg, nid))))
+    scored.sort(key=lambda t: -t[1])
+    if scored:
+        for sym, cnt in scored[:top_n]:
+            lines.append(f"- `{sym}` → {cnt} downstream nodes")
+    else:
+        lines.append("- *No scored symbols.*")
+    lines.append("")
+
+    lines += ["### Dependency graph (structural communities)", ""]
+    comms = greedy_modularity_file_communities(graph)
+    if comms:
+        comms.sort(key=lambda c: -len(c))
+        for i, c in enumerate(comms[:community_preview], start=1):
+            sample = ", ".join(f"`{x}`" for x in c[:3])
+            extra = f" (+{len(c) - 3} more)" if len(c) > 3 else ""
+            lines.append(f"- Community {i} ({len(c)} files): {sample}{extra}")
+        if len(comms) > community_preview:
+            lines.append(f"- *…and {len(comms) - community_preview} more communities.*")
+    else:
+        lines.append("- *No file-level import graph (try Java with `--graph-include-structural`).*")
+    lines.append("")
+    return lines
+
+
 def _decision_bullets(sl: FlowSlice) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -190,10 +278,15 @@ def write_entry_markdown(
 
     if intelligence_transitive_callers:
         cb = called_by_transitive(g, entry_id, intelligence_cap)
-        cb_blurb = "*Transitive callers (ancestors in call graph; static analysis; capped).*"
+        cb_blurb = (
+            "*Transitive upstream (`nx.ancestors` on dependency reachability: CALLS + structural edges; "
+            "CONTAINS excluded; capped).*"
+        )
     else:
         cb = called_by_direct(g, entry_id, intelligence_cap)
-        cb_blurb = "*Direct callers (full call graph; static analysis; capped).*"
+        cb_blurb = (
+            "*Direct predecessors in dependency reachability (calls + structural relations when enabled; capped).*"
+        )
     im = impact_descendants(g, entry_id, intelligence_cap)
     lines.append("## Called By")
     lines.append("")
@@ -205,11 +298,11 @@ def write_entry_markdown(
         if len(cb) >= intelligence_cap:
             lines.append(f"- *…truncated at {intelligence_cap} items.*")
     else:
-        lines.append("*None in call graph or entry not found.*")
+        lines.append("*None in dependency reachability graph or entry not found.*")
     lines.append("")
     lines.append("## Impact")
     lines.append("")
-    lines.append("*Transitive callees from this entry (call graph; capped).*")
+    lines.append("*Transitive downstream (`nx.descendants` on dependency reachability; capped).*")
     lines.append("")
     if im:
         for x in im:
@@ -333,4 +426,5 @@ def write_system_overview(
     lines.append("")
     if emit_graph_stats and graph is not None:
         lines.extend(_graph_inventory_lines(graph))
+        lines.extend(_system_graph_insights_lines(graph))
     path.write_text("\n".join(lines), encoding="utf-8")

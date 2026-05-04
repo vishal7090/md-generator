@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdengine"
-version = "0.8.0"
+version = "0.8.1"
 description = "Convert PDF, Office, images, audio, video, text/JSON/XML, ZIP archives, web URLs, databases, graphs, and OpenAPI specs to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"

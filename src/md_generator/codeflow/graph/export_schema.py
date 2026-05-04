@@ -9,6 +9,7 @@ import networkx as nx
 from md_generator.codeflow.graph import relations as rel
 
 _REL_CALLS = rel.REL_CALLS
+_REL_ASYNC = rel.REL_ASYNC
 _REL_CONTAINS = rel.REL_CONTAINS
 _KIND_FILE = "File"
 _KIND_CLASS = "Class"
@@ -228,6 +229,16 @@ def to_stable_schema(g: nx.DiGraph) -> dict[str, Any]:
                 "recursive": ed.get("recursive"),
             },
         )
+        if ed.get("async_") or ed.get("type") == "async":
+            edges_out.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "kind": _REL_ASYNC,
+                    "condition": ed.get("condition"),
+                    "confidence": float(ed.get("confidence", 1.0)),
+                },
+            )
 
     for u, v, ed in g.edges(data=True):
         rk = ed.get("relation") or _REL_CALLS

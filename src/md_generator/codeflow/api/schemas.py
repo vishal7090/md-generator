@@ -48,6 +48,8 @@ class AnalyzeOptions(BaseModel):
     graph_include_structural: bool | None = None
     intelligence_transitive_callers: bool | None = None
     emit_system_graph_stats: bool | None = None
+    emit_graph_sqlite: bool | None = None
+    emit_graph_communities: bool | None = None
     emit_llm_entry_sidecar: bool | None = None
 
 
@@ -95,6 +97,8 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     gis = False if not raw or raw.graph_include_structural is None else bool(raw.graph_include_structural)
     itc = False if not raw or raw.intelligence_transitive_callers is None else bool(raw.intelligence_transitive_callers)
     esgs = False if not raw or raw.emit_system_graph_stats is None else bool(raw.emit_system_graph_stats)
+    egsql = False if not raw or raw.emit_graph_sqlite is None else bool(raw.emit_graph_sqlite)
+    egc = False if not raw or raw.emit_graph_communities is None else bool(raw.emit_graph_communities)
     ellm = False if not raw or raw.emit_llm_entry_sidecar is None else bool(raw.emit_llm_entry_sidecar)
     return ScanConfig(
         project_root=workspace_src,
@@ -131,6 +135,8 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         graph_include_structural=gis,
         intelligence_transitive_callers=itc,
         emit_system_graph_stats=esgs,
+        emit_graph_sqlite=egsql,
+        emit_graph_communities=egc,
         emit_llm_entry_sidecar=ellm,
     )
 
@@ -183,6 +189,8 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "graph_include_structural": cfg.graph_include_structural,
         "intelligence_transitive_callers": cfg.intelligence_transitive_callers,
         "emit_system_graph_stats": cfg.emit_system_graph_stats,
+        "emit_graph_sqlite": cfg.emit_graph_sqlite,
+        "emit_graph_communities": cfg.emit_graph_communities,
         "emit_llm_entry_sidecar": cfg.emit_llm_entry_sidecar,
     }
 
@@ -229,6 +237,8 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         graph_include_structural=bool(data.get("graph_include_structural", False)),
         intelligence_transitive_callers=bool(data.get("intelligence_transitive_callers", False)),
         emit_system_graph_stats=bool(data.get("emit_system_graph_stats", False)),
+        emit_graph_sqlite=bool(data.get("emit_graph_sqlite", False)),
+        emit_graph_communities=bool(data.get("emit_graph_communities", False)),
         emit_llm_entry_sidecar=bool(data.get("emit_llm_entry_sidecar", False)),
     )
 

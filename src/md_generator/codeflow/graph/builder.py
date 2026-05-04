@@ -172,6 +172,64 @@ def _merge_structural_edges(
                 )
 
 
+def _canonical_file_id_for_node(nid: str) -> str | None:
+    """Map ``file:``, ``class:path::C``, or symbol ``path::C.m`` to ``file:path``."""
+    if nid.startswith("file:"):
+        return nid
+    if nid.startswith("class:"):
+        rest = nid[6:]
+        if "::" not in rest:
+            return None
+        fp, _c = rest.split("::", 1)
+        return f"file:{fp}" if fp else None
+    if nid.startswith(("external:", "unknown::")):
+        return None
+    if "::" in nid:
+        fp = nid.split("::", 1)[0]
+        return f"file:{fp}" if fp else None
+    return None
+
+
+def _add_file_level_import_edges(g: nx.DiGraph) -> None:
+    """Add ``file:``→``file:`` IMPORTS edges derived from any IMPORTS edge (class/file/symbol endpoints).
+
+    ``DiGraph`` allows only one edge per (u, v); if ``fu→fv`` already exists with another ``relation``,
+    skip adding IMPORTS (cannot represent parallel edge kinds).
+    """
+    for u, v, d in list(g.edges(data=True)):
+        if d.get("relation") != rel.REL_IMPORTS:
+            continue
+        fu = _canonical_file_id_for_node(u)
+        fv = _canonical_file_id_for_node(v)
+        if not fu or not fv or fu == fv:
+            continue
+        lang_u = str(g.nodes[u].get("language") or "mixed")
+        lang_v = str(g.nodes[v].get("language") or lang_u)
+        _ensure_structural_vertex(g, fu, lang_u)
+        _ensure_structural_vertex(g, fv, lang_v)
+        conf = float(d.get("confidence", 1.0))
+        if g.has_edge(fu, fv):
+            ed = g.edges[fu, fv]
+            if ed.get("relation") == rel.REL_IMPORTS:
+                ed["confidence"] = min(float(ed.get("confidence", 1.0)), conf)
+                ed["file_layer"] = True
+            continue
+        g.add_edge(
+            fu,
+            fv,
+            type="structural",
+            relation=rel.REL_IMPORTS,
+            condition=None,
+            labels=[],
+            async_=False,
+            unknown_call=False,
+            recursive=False,
+            confidence=conf,
+            structural_line=d.get("structural_line"),
+            file_layer=True,
+        )
+
+
 def build_graph(
     parse_results: list[FileParseResult],
     project_root: Path,
@@ -278,6 +336,7 @@ def build_graph(
                 )
 
     _merge_structural_edges(g, parse_results, root, include_structural=include_structural)
+    _add_file_level_import_edges(g)
 
     if include_structural and _LOG.isEnabledFor(logging.DEBUG):
         n_call = sum(1 for _, _, d in g.edges(data=True) if d.get("relation", rel.REL_CALLS) == rel.REL_CALLS)

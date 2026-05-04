@@ -57,6 +57,10 @@ class ScanConfig:
     intelligence_transitive_callers: bool = False
     # Append graph inventory (node/edge counts, relation mix) to system_overview.md.
     emit_system_graph_stats: bool = False
+    # Optional SQLite graph.db (nodes/edges tables) for large-repo queries.
+    emit_graph_sqlite: bool = False
+    # When json is in formats, write graph-communities.json (greedy modularity on file imports).
+    emit_graph_communities: bool = False
     # Write entry.llm.md beside entry.md (LLM-oriented pointers, no duplicate full text).
     emit_llm_entry_sidecar: bool = False
 

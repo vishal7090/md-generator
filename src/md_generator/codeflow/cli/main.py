@@ -242,6 +242,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Append graph inventory (counts, top out-degree) to system_overview.md",
     )
     scan.add_argument(
+        "--emit-graph-sqlite",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write graph.db (SQLite nodes/edges) alongside graph-full.json",
+    )
+    scan.add_argument(
+        "--emit-graph-communities",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="When json format is on, write graph-communities.json (greedy modularity on file imports)",
+    )
+    scan.add_argument(
         "--emit-llm-entry-sidecar",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -375,6 +387,8 @@ def main(argv: list[str] | None = None) -> int:
             graph_include_structural=bool(ns.graph_include_structural),
             intelligence_transitive_callers=bool(ns.intelligence_transitive_callers),
             emit_system_graph_stats=bool(ns.emit_system_graph_stats),
+            emit_graph_sqlite=bool(ns.emit_graph_sqlite),
+            emit_graph_communities=bool(ns.emit_graph_communities),
             emit_llm_entry_sidecar=bool(ns.emit_llm_entry_sidecar),
         )
         run_scan(cfg, workspace=ws)

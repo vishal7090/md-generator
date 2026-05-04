@@ -141,6 +141,8 @@ class CodeflowJobManager:
             graph_include_structural=cfg_template.graph_include_structural,
             intelligence_transitive_callers=cfg_template.intelligence_transitive_callers,
             emit_system_graph_stats=cfg_template.emit_system_graph_stats,
+            emit_graph_sqlite=cfg_template.emit_graph_sqlite,
+            emit_graph_communities=cfg_template.emit_graph_communities,
             emit_llm_entry_sidecar=cfg_template.emit_llm_entry_sidecar,
         )
         now = time.time()
