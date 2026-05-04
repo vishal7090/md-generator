@@ -28,15 +28,18 @@ def enrich_graph_for_views(graph: dict, entry_id: str) -> dict:
     """
     nodes_in = list(graph.get("nodes") or [])
     edges_in = list(graph.get("edges") or [])
-    G = nx.DiGraph()
+    G = nx.MultiDiGraph()
     for n in nodes_in:
         nid = n.get("id")
         if nid:
             G.add_node(nid)
-    for e in edges_in:
+    for i, e in enumerate(edges_in):
         u, v = e.get("source"), e.get("target")
         if u and v and G.has_node(u) and G.has_node(v):
-            G.add_edge(u, v)
+            ek = e.get("key")
+            if ek is None:
+                ek = i
+            G.add_edge(u, v, key=ek)
 
     if entry_id in G:
         lengths: dict[str, int] = dict(nx.single_source_shortest_path_length(G, entry_id))

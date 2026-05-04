@@ -6,13 +6,16 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-
-import networkx as nx
+from typing import Any
 
 from md_generator.codeflow.analyzers.flow_analyzer import slice_from_entry
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, unique_predecessor_count
 from md_generator.codeflow.detectors.entry_detector import apply_entry_detectors, resolve_entry_symbol_ids
 from md_generator.codeflow.detectors.entry_rank import sort_entry_ids
 from md_generator.codeflow.graph.builder import GraphBuildResult, build_graph, graph_to_serializable
+from md_generator.codeflow.graph.clustering import communities_for_mode, file_cluster_labels
+from md_generator.codeflow.graph.event_graph import apply_event_edges
+from md_generator.codeflow.graph.query_engine import execute_query
 from md_generator.codeflow.graph.export_schema import to_stable_schema
 from md_generator.codeflow.generators.flow_tree import flow_tree_to_serializable
 from md_generator.codeflow.generators.html import write_html_bundle
@@ -49,7 +52,7 @@ def _read_entries_file(path: Path) -> list[str]:
     return out
 
 
-def _method_symbols_for_emit(g: nx.DiGraph, max_n: int, filter_re: str | None) -> list[str]:
+def _method_symbols_for_emit(g: CodeflowGraph, max_n: int, filter_re: str | None) -> list[str]:
     pat = re.compile(filter_re) if filter_re else None
     cand: list[str] = []
     for n, d in g.nodes(data=True):
@@ -66,14 +69,14 @@ def _method_symbols_for_emit(g: nx.DiGraph, max_n: int, filter_re: str | None) -
     return cand[:max_n]
 
 
-def _root_symbol_ids(g: nx.DiGraph, max_n: int) -> list[str]:
+def _root_symbol_ids(g: CodeflowGraph, max_n: int) -> list[str]:
     roots: list[str] = []
     for n in g.nodes():
         if not isinstance(n, str) or "::" not in n:
             continue
         if n.startswith("unknown::"):
             continue
-        if g.in_degree(n) != 0:
+        if unique_predecessor_count(g, n) != 0:
             continue
         d = g.nodes[n]
         if d.get("type") not in ("method", "entry"):
@@ -82,14 +85,14 @@ def _root_symbol_ids(g: nx.DiGraph, max_n: int) -> list[str]:
     return sorted(roots)[:max_n]
 
 
-def _first_n_graph_symbol_ids(g: nx.DiGraph, max_n: int) -> list[str]:
+def _first_n_graph_symbol_ids(g: CodeflowGraph, max_n: int) -> list[str]:
     ids = sorted(
         n for n in g.nodes() if isinstance(n, str) and "::" in n and not n.startswith("unknown::")
     )
     return ids[:max_n]
 
 
-def _resolve_scan_entry_ids(cfg: ScanConfig, g: nx.DiGraph, all_entries: list[EntryRecord]) -> tuple[list[str], list[str]]:
+def _resolve_scan_entry_ids(cfg: ScanConfig, g: CodeflowGraph, all_entries: list[EntryRecord]) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
 
     if cfg.entry:
@@ -164,7 +167,7 @@ def _write_scan_summary(
     *,
     project_root: Path,
     parse_count: int,
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     entry_ids: list[str],
     emitted_slugs: int,
     warnings: list[str],
@@ -201,6 +204,10 @@ def _write_scan_summary(
         f"- **emit_system_graph_stats:** {cfg.emit_system_graph_stats}",
         f"- **emit_graph_sqlite:** {cfg.emit_graph_sqlite}",
         f"- **emit_graph_communities:** {cfg.emit_graph_communities}",
+        f"- **include_references:** {cfg.include_references}",
+        f"- **include_events:** {cfg.include_events}",
+        f"- **cluster_mode:** `{cfg.cluster_mode}`",
+        f"- **graph_query:** {repr(cfg.graph_query) if cfg.graph_query else 'None'}",
         f"- **emit_llm_entry_sidecar:** {cfg.emit_llm_entry_sidecar}",
         "",
     ]
@@ -257,8 +264,19 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         parse_results,
         ws.root,
         include_structural=cfg.graph_include_structural,
+        include_references=cfg.include_references,
     )
     g = gb.graph
+    if cfg.include_events:
+        apply_event_edges(g, parse_results)
+
+    cluster_by_file: dict[str, int] | None = None
+    comm_payload: list[Any] | None = None
+    comm_algo: str | None = None
+    if cfg.emit_graph_communities or "md" in {x.strip().lower() for x in cfg.formats}:
+        comm_payload, comm_algo = communities_for_mode(g, cfg.cluster_mode)
+        if comm_payload and "md" in {x.strip().lower() for x in cfg.formats}:
+            cluster_by_file = file_cluster_labels(g, comm_payload, cfg.cluster_mode)
 
     out = cfg.output_path
     out.mkdir(parents=True, exist_ok=True)
@@ -334,6 +352,9 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     intelligence_cap=cfg.intelligence_list_cap,
                     graph_include_structural=cfg.graph_include_structural,
                     intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                    include_references=cfg.include_references,
+                    include_events=cfg.include_events,
+                    cluster_by_file=cluster_by_file,
                 )
                 if cfg.business_rules_combined:
                     write_combined_entry_markdown(
@@ -352,6 +373,9 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     intelligence_cap=cfg.intelligence_list_cap,
                     graph_include_structural=cfg.graph_include_structural,
                     intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                    include_references=cfg.include_references,
+                    include_events=cfg.include_events,
+                    cluster_by_file=cluster_by_file,
                 )
             if eid in g:
                 k = rec.kind.value if rec else g.nodes[eid].get("entry_kind")
@@ -430,15 +454,17 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         if cfg.emit_graph_schema:
             sch = to_stable_schema(g)
             (out / "graph-schema.json").write_text(json.dumps(sch, indent=2), encoding="utf-8")
-        if cfg.emit_graph_communities:
-            from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
-
-            comms = greedy_modularity_file_communities(g)
-            (out / "graph-communities.json").write_text(
-                json.dumps(
-                    {"algorithm": "greedy_modularity", "layer": "file_imports", "communities": comms},
-                    indent=2,
-                ),
+        if cfg.emit_graph_communities and comm_payload is not None:
+            body: dict[str, Any] = {
+                "algorithm": comm_algo or "unknown",
+                "layer": cfg.cluster_mode,
+                "communities": comm_payload,
+            }
+            (out / "graph-communities.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
+        if cfg.graph_query and cfg.graph_query.strip():
+            rows = execute_query(g, cfg.graph_query.strip())
+            (out / "query-results.json").write_text(
+                json.dumps({"query": cfg.graph_query.strip(), "rows": rows}, indent=2),
                 encoding="utf-8",
             )
     if cfg.emit_graph_sqlite:
@@ -527,6 +553,10 @@ def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> byt
             cfg_path_max_depth=cfg.cfg_path_max_depth,
             cfg_loop_visits=cfg.cfg_loop_visits,
             graph_include_structural=cfg.graph_include_structural,
+            include_references=cfg.include_references,
+            include_events=cfg.include_events,
+            cluster_mode=cfg.cluster_mode,
+            graph_query=cfg.graph_query,
             intelligence_transitive_callers=cfg.intelligence_transitive_callers,
             emit_system_graph_stats=cfg.emit_system_graph_stats,
             emit_graph_sqlite=cfg.emit_graph_sqlite,

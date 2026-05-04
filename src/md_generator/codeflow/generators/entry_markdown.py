@@ -8,6 +8,8 @@ from pathlib import Path
 import networkx as nx
 
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
+from md_generator.codeflow.graph.analysis import event_flow_edges, references_from
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, iter_multi_edges, iter_out_edges
 from md_generator.codeflow.generators.flow_summary import format_flow_description, format_method_summary_lines
 from md_generator.codeflow.graph import relations as graph_rel
 from md_generator.codeflow.graph.enricher import (
@@ -39,7 +41,7 @@ def type_label_for_kind(kind: str | None) -> str:
     return mapping.get(kind, "Other")
 
 
-def _subtitle(entry_id: str, entry_record: EntryRecord | None, g: nx.DiGraph) -> str | None:
+def _subtitle(entry_id: str, entry_record: EntryRecord | None, g: CodeflowGraph) -> str | None:
     if entry_record and entry_record.label.strip():
         lab = entry_record.label.strip()
         up = lab.upper()
@@ -55,7 +57,7 @@ def _subtitle(entry_id: str, entry_record: EntryRecord | None, g: nx.DiGraph) ->
     return tail.replace("_", " ") if tail else None
 
 
-def pretty_start_method(g: nx.DiGraph, entry_id: str) -> str:
+def pretty_start_method(g: CodeflowGraph, entry_id: str) -> str:
     if entry_id not in g:
         tail = entry_id.split("::")[-1] if "::" in entry_id else entry_id
         if "." in tail:
@@ -73,7 +75,7 @@ def pretty_start_method(g: nx.DiGraph, entry_id: str) -> str:
     return tail if tail.endswith(")") else f"{tail}()"
 
 
-def _async_event_lines(sl: FlowSlice, g: nx.DiGraph) -> list[str]:
+def _async_event_lines(sl: FlowSlice, g: CodeflowGraph) -> list[str]:
     lines: list[str] = []
     for _u, v, ed in sl.edges:
         if ed.get("async_") or ed.get("type") == "async":
@@ -86,7 +88,7 @@ def _async_event_lines(sl: FlowSlice, g: nx.DiGraph) -> list[str]:
     return lines
 
 
-def _collect_entry_tags(entry_id: str, g: nx.DiGraph) -> list[str]:
+def _collect_entry_tags(entry_id: str, g: CodeflowGraph) -> list[str]:
     if entry_id not in g:
         return []
     d = g.nodes[entry_id]
@@ -95,18 +97,18 @@ def _collect_entry_tags(entry_id: str, g: nx.DiGraph) -> list[str]:
         v = d.get(ek)
         if v:
             tags.add(str(v))
-    for _, _succ, ed in g.out_edges(entry_id, data=True):
+    for _, _succ, _k, ed in iter_out_edges(g, entry_id):
         if ed.get("async_") or ed.get("type") == "async":
             tags.add("async_outbound")
             break
     return sorted(tags)
 
 
-def _graph_inventory_lines(graph: nx.DiGraph, top_n: int = 10) -> list[str]:
+def _graph_inventory_lines(graph: CodeflowGraph, top_n: int = 10) -> list[str]:
     from md_generator.codeflow.graph.enricher import call_graph_view
 
     rel_counts: dict[str, int] = {}
-    for _, _, ed in graph.edges(data=True):
+    for _, _, _k, ed in iter_multi_edges(graph):
         k = str(ed.get("relation") or graph_rel.REL_CALLS)
         rel_counts[k] = rel_counts.get(k, 0) + 1
     lines = [
@@ -129,7 +131,7 @@ def _graph_inventory_lines(graph: nx.DiGraph, top_n: int = 10) -> list[str]:
     return lines
 
 
-def _system_graph_insights_lines(graph: nx.DiGraph, *, top_n: int = 10, community_preview: int = 8) -> list[str]:
+def _system_graph_insights_lines(graph: CodeflowGraph, *, top_n: int = 10, community_preview: int = 8) -> list[str]:
     """Top modules, file import layer, high-impact symbols, modularity communities."""
     from md_generator.codeflow.graph.analysis import dependency_reachability_subgraph
     from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
@@ -158,7 +160,7 @@ def _system_graph_insights_lines(graph: nx.DiGraph, *, top_n: int = 10, communit
     lines += ["", "### File dependency graph", ""]
     file_nodes = [n for n in graph.nodes() if isinstance(n, str) and str(n).startswith("file:")]
     ff_imp = 0
-    for u, v, d in graph.edges(data=True):
+    for u, v, _k, d in iter_multi_edges(graph):
         if d.get("relation") != graph_rel.REL_IMPORTS:
             continue
         if (
@@ -238,13 +240,16 @@ def write_entry_markdown(
     path: Path,
     entry_id: str,
     sl: FlowSlice,
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     entry_record: EntryRecord | None,
     rules: Sequence[BusinessRule] | None = None,
     *,
     intelligence_cap: int = 80,
     graph_include_structural: bool = False,
     intelligence_transitive_callers: bool = False,
+    include_references: bool = False,
+    include_events: bool = False,
+    cluster_by_file: dict[str, int] | None = None,
 ) -> None:
     lines: list[str] = []
     lines.append("# Execution Flow Documentation")
@@ -333,6 +338,44 @@ def write_entry_markdown(
         )
     lines.append("")
 
+    ref_list = references_from(g, entry_id)
+    if include_references or ref_list:
+        lines.append("## References")
+        lines.append("")
+        if ref_list:
+            for tgt in ref_list[:intelligence_cap]:
+                lines.append(f"- `{_md_escape(str(tgt))}`")
+            if len(ref_list) >= intelligence_cap:
+                lines.append(f"- *…truncated at {intelligence_cap} items.*")
+        else:
+            lines.append("*No REFERENCES edges for this symbol (enable `--include-references`).*")
+        lines.append("")
+
+    if include_events:
+        lines.append("## Event flow (graph)")
+        lines.append("")
+        ev_lines: list[str] = []
+        for u, v, _d in event_flow_edges(g):
+            su, sv = str(u), str(v)
+            if entry_id == su or entry_id == sv:
+                ev_lines.append(f"- `{su}` → `{sv}`")
+        if ev_lines:
+            lines.extend(ev_lines[:intelligence_cap])
+            if len(ev_lines) >= intelligence_cap:
+                lines.append(f"- *…truncated at {intelligence_cap} items.*")
+        else:
+            lines.append("*No EVENT edges touching this entry (Kafka listeners need `--include-events`).*")
+        lines.append("")
+
+    if cluster_by_file and entry_id in g:
+        fp0 = str((g.nodes[entry_id].get("file_path") or "")).strip()
+        cid0 = cluster_by_file.get(fp0) if fp0 else None
+        if cid0 is not None:
+            lines.append("## Cluster")
+            lines.append("")
+            lines.append(f"- **Community id:** {cid0} (from `cluster_mode` communities)")
+            lines.append("")
+
     if entry_id in g:
         d = g.nodes[entry_id]
         lines.append("## Metadata")
@@ -403,7 +446,7 @@ def write_system_overview(
     rows: list[tuple[str, str, str, str, str]],
     *,
     project_hint: str | None = None,
-    graph: nx.DiGraph | None = None,
+    graph: CodeflowGraph | None = None,
     emit_graph_stats: bool = False,
 ) -> None:
     """Write root overview. Each row: ``(slug, type_label, start_method, link_line, one_line)``.

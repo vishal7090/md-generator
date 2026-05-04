@@ -14,6 +14,7 @@ from md_generator.codeflow.graph.analysis import (
 from md_generator.codeflow.graph.builder import build_graph
 from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
 from md_generator.codeflow.graph import relations as rel
+from md_generator.codeflow.graph.multigraph_utils import edge_data_dicts
 from md_generator.codeflow.graph.sqlite_export import export_graph_sqlite
 from md_generator.codeflow.models.ir import FileParseResult, StructuralEdge
 
@@ -49,7 +50,7 @@ def test_file_level_import_edge_from_class_import(tmp_path: Path) -> None:
     gb = build_graph([fr], root, include_structural=True)
     g = gb.graph
     assert g.has_edge("file:src/A.java", "file:src/B.java")
-    ed = g.edges["file:src/A.java", "file:src/B.java"]
+    ed = edge_data_dicts(g, "file:src/A.java", "file:src/B.java")[0]
     assert ed.get("relation") == rel.REL_IMPORTS
     assert ed.get("file_layer") is True
 

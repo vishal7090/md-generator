@@ -6,9 +6,8 @@ import ast
 import re
 from pathlib import Path
 
-import networkx as nx
-
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph
 from md_generator.codeflow.core.run_config import ScanConfig
 from md_generator.codeflow.models.ir import BusinessRule, FileParseResult
 from md_generator.codeflow.parsers.python_parser import _rel_key
@@ -38,7 +37,7 @@ def dedupe_rules(rules: list[BusinessRule]) -> list[BusinessRule]:
     return out
 
 
-def _rules_from_slice_edges(sl: FlowSlice, g: nx.DiGraph) -> list[BusinessRule]:
+def _rules_from_slice_edges(sl: FlowSlice, g: CodeflowGraph) -> list[BusinessRule]:
     rules: list[BusinessRule] = []
     seen: set[tuple[str, str, str]] = set()
     for u, v, ed in sl.edges:
@@ -201,7 +200,7 @@ def _extract_sql_trigger_lines(path: Path) -> list[BusinessRule]:
     return rules
 
 
-def _slice_nodes_by_file(sl: FlowSlice, g: nx.DiGraph) -> dict[str, set[str]]:
+def _slice_nodes_by_file(sl: FlowSlice, g: CodeflowGraph) -> dict[str, set[str]]:
     by_file: dict[str, set[str]] = {}
     for sid in sl.nodes:
         if sid not in g:
@@ -236,7 +235,7 @@ def _iter_sql_paths(project_root: Path, paths_override: list[Path] | None) -> li
 def collect_business_rules(
     _entry_id: str,
     sl: FlowSlice,
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     parse_results: list[FileParseResult],
     cfg: ScanConfig,
     *,

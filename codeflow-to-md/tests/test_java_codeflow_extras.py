@@ -9,6 +9,7 @@ from md_generator.codeflow.graph.builder import build_graph
 from md_generator.codeflow.parsers.java_parser import JavaParser
 from md_generator.codeflow.rules.collector import collect_business_rules
 from md_generator.codeflow.analyzers.flow_analyzer import slice_from_entry
+from md_generator.codeflow.graph.multigraph_utils import edge_data_dicts
 
 
 def _fixture_root(name: str) -> Path:
@@ -25,9 +26,10 @@ def test_java_callsite_condition_on_edge(tmp_path: Path) -> None:
     caller = "c/Cond.java::Cond.caller"
     assert caller in g
     cond_edges = [
-        (v, g.edges[caller, v].get("condition"))
+        (v, d.get("condition"))
         for v in g.successors(caller)
-        if g.edges[caller, v].get("condition")
+        for d in edge_data_dicts(g, caller, v)
+        if d.get("condition")
     ]
     assert cond_edges, "expected at least one conditional call from caller()"
     _v, cond = cond_edges[0]

@@ -251,7 +251,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--emit-graph-communities",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="When json format is on, write graph-communities.json (greedy modularity on file imports)",
+        help="When json format is on, write graph-communities.json (modularity; mode via --cluster-mode)",
+    )
+    scan.add_argument(
+        "--include-references",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Merge parser REFERENCES edges into the graph (Python/Java/TS heuristics)",
+    )
+    scan.add_argument(
+        "--include-events",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add Kafka topic nodes and EVENT edges for Java @KafkaListener entries",
+    )
+    scan.add_argument(
+        "--cluster-mode",
+        choices=("file_imports", "structural", "semantic", "hybrid"),
+        default="file_imports",
+        help="Clustering layer for graph-communities.json and entry.md cluster line",
+    )
+    scan.add_argument(
+        "--graph-query",
+        default=None,
+        metavar="MATCH",
+        help='Optional Cypher-like pattern (e.g. MATCH (a)-[CALLS]->(b)); writes query-results.json when json format is on',
     )
     scan.add_argument(
         "--emit-llm-entry-sidecar",
@@ -385,6 +409,10 @@ def main(argv: list[str] | None = None) -> int:
             cfg_path_max_depth=int(ns.cfg_path_max_depth),
             cfg_loop_visits=int(ns.cfg_loop_visits),
             graph_include_structural=bool(ns.graph_include_structural),
+            include_references=bool(ns.include_references),
+            include_events=bool(ns.include_events),
+            cluster_mode=ns.cluster_mode,
+            graph_query=ns.graph_query,
             intelligence_transitive_callers=bool(ns.intelligence_transitive_callers),
             emit_system_graph_stats=bool(ns.emit_system_graph_stats),
             emit_graph_sqlite=bool(ns.emit_graph_sqlite),

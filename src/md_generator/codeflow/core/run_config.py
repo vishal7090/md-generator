@@ -51,8 +51,16 @@ class ScanConfig:
     cfg_max_paths: int = 100
     cfg_path_max_depth: int = 1000
     cfg_loop_visits: int = 2
-    # Merge parser structural edges (IMPORTS / INHERITS / …) into the DiGraph (Java first).
+    # Merge parser structural edges (IMPORTS / INHERITS / …) into the graph (Java first).
     graph_include_structural: bool = False
+    # Emit REFERENCES edges from parsers (Python/Java/TS heuristics).
+    include_references: bool = False
+    # Emit EVENT edges (e.g. Kafka topic → consumer).
+    include_events: bool = False
+    # Clustering mode for graph-communities.json and optional Markdown cluster line.
+    cluster_mode: Literal["file_imports", "structural", "semantic", "hybrid"] = "file_imports"
+    # Optional Cypher-like query; results written to query-results.json when json in formats.
+    graph_query: str | None = None
     # When true, "Called By" lists transitive callers (ancestors in call graph) instead of direct only.
     intelligence_transitive_callers: bool = False
     # Append graph inventory (node/edge counts, relation mix) to system_overview.md.

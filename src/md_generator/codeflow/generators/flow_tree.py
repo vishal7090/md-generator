@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-import networkx as nx
-
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph
 
 
-def flow_tree_to_serializable(entry_id: str, sl: FlowSlice, g: nx.DiGraph) -> dict[str, Any]:
+def flow_tree_to_serializable(entry_id: str, sl: FlowSlice, g: CodeflowGraph) -> dict[str, Any]:
     """Build a JSON-serializable tree by DFS on slice edges; repeated nodes allowed in different branches.
 
     ``back_edge`` is True when the target already appears on the current path (cycle / recursion hint).
@@ -46,7 +45,7 @@ def flow_tree_to_serializable(entry_id: str, sl: FlowSlice, g: nx.DiGraph) -> di
     }
 
 
-def _node_short_label(g: nx.DiGraph, node: str) -> str:
+def _node_short_label(g: CodeflowGraph, node: str) -> str:
     if node not in g:
         return node
     d = g.nodes[node]

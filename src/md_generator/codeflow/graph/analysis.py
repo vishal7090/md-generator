@@ -1,34 +1,51 @@
-"""Dependency reachability for impact / reverse-impact (calls + structural relations, not containment)."""
+"""Dependency reachability and multi-edge helpers (``MultiDiGraph``)."""
 
 from __future__ import annotations
 
 import networkx as nx
 
 from md_generator.codeflow.graph import relations as rel
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, iter_multi_edges, iter_out_edges
 
-# CONTAINS models nesting (file/class/method), not operational dependency.
 _SKIP_REACHABILITY: frozenset[str] = frozenset({rel.REL_CONTAINS})
 
 
-def dependency_reachability_subgraph(g: nx.DiGraph) -> nx.DiGraph:
-    """Directed subgraph for *impact* and *called-by*: all edges except ``CONTAINS``.
-
-    Includes ``CALLS``, ``IMPORTS``, ``INHERITS``, ``IMPLEMENTS``, ``REFERENCES``,
-    ``EVENT``, ``ASYNC`` (when emitted as its own relation), etc.
-    """
+def dependency_reachability_subgraph(g: CodeflowGraph) -> nx.DiGraph:
+    """Collapse to a simple digraph: non-CONTAINS edges (one arc per pair)."""
     sg = nx.DiGraph()
-    for n, d in g.nodes(data=True):
-        sg.add_node(n, **dict(d))
-    for u, v, d in g.edges(data=True):
+    sg.add_nodes_from(g.nodes())
+    for u, v, _k, d in iter_multi_edges(g):
         r = d.get("relation", rel.REL_CALLS)
         if r in _SKIP_REACHABILITY:
             continue
-        sg.add_edge(u, v, **dict(d))
+        sg.add_edge(u, v)
     return sg
 
 
-def called_by_direct_dependency(g: nx.DiGraph, node_id: str, cap: int) -> list[str]:
-    """Immediate predecessors in the dependency reachability graph."""
+def edges_by_kind(g: CodeflowGraph, kind: str) -> list[tuple[str, str, dict[str, object]]]:
+    out: list[tuple[str, str, dict[str, object]]] = []
+    for u, v, _k, d in iter_multi_edges(g):
+        r = d.get("relation") or d.get("kind")
+        if r == kind:
+            out.append((u, v, dict(d)))
+    return out
+
+
+def event_flow_edges(g: CodeflowGraph) -> list[tuple[str, str, dict[str, object]]]:
+    return edges_by_kind(g, rel.REL_EVENT)
+
+
+def references_from(g: CodeflowGraph, node_id: str) -> list[str]:
+    out: list[str] = []
+    if node_id not in g:
+        return out
+    for _u, v, _k, d in iter_out_edges(g, node_id):
+        if d.get("relation") == rel.REL_REFERENCES or d.get("kind") == rel.REL_REFERENCES:
+            out.append(v)
+    return out
+
+
+def called_by_direct_dependency(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
     dg = dependency_reachability_subgraph(g)
     if node_id not in dg:
         return []
@@ -36,8 +53,7 @@ def called_by_direct_dependency(g: nx.DiGraph, node_id: str, cap: int) -> list[s
     return preds[:cap]
 
 
-def called_by_transitive_dependency(g: nx.DiGraph, node_id: str, cap: int) -> list[str]:
-    """``nx.ancestors`` in the dependency reachability graph (excluding ``node_id``)."""
+def called_by_transitive_dependency(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
     dg = dependency_reachability_subgraph(g)
     if node_id not in dg:
         return []
@@ -46,8 +62,7 @@ def called_by_transitive_dependency(g: nx.DiGraph, node_id: str, cap: int) -> li
     return sorted(anc)[:cap]
 
 
-def impact_descendants_dependency(g: nx.DiGraph, node_id: str, cap: int) -> list[str]:
-    """``nx.descendants`` in the dependency reachability graph (excluding ``node_id``)."""
+def impact_descendants_dependency(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
     dg = dependency_reachability_subgraph(g)
     if node_id not in dg:
         return []

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import networkx as nx
-
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph
 from md_generator.codeflow.graph.enricher import (
     called_by_direct,
     called_by_transitive,
@@ -17,7 +16,7 @@ def write_flow_markdown(
     out: Path,
     entry_id: str,
     sl: FlowSlice,
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     *,
     list_cap: int = 80,
     intelligence_transitive_callers: bool = False,

@@ -7,6 +7,7 @@ from typing import Any
 import networkx as nx
 
 from md_generator.codeflow.graph import relations as rel
+from md_generator.codeflow.graph.multigraph_utils import iter_multi_edges
 
 _REL_CALLS = rel.REL_CALLS
 _REL_ASYNC = rel.REL_ASYNC
@@ -53,7 +54,7 @@ def _tags_from_graph(d: dict[str, Any]) -> list[str]:
 
 
 def _ingest_prebuilt_structural_nodes(
-    g: nx.DiGraph,
+    g: nx.MultiDiGraph,
     nodes_out: list[dict[str, Any]],
     files_seen: set[str],
     classes_seen: set[tuple[str, str]],
@@ -119,23 +120,42 @@ def _ingest_prebuilt_structural_nodes(
                     "confidence": float(d.get("confidence", 0.6)),
                 },
             )
+        elif sid.startswith("topic:"):
+            tn = sid[6:]
+            nodes_out.append(
+                {
+                    "id": sid,
+                    "kind": "Topic",
+                    "name": tn,
+                    "qualified_name": tn,
+                    "file_path": None,
+                    "line_start": None,
+                    "line_end": None,
+                    "language": d.get("language"),
+                    "tags": list(d.get("tags") or ["event", "topic"]),
+                    "confidence": 1.0,
+                },
+            )
 
 
-def to_stable_schema(g: nx.DiGraph) -> dict[str, Any]:
+def to_stable_schema(g: nx.MultiDiGraph) -> dict[str, Any]:
     """Return serializable schema with derived File/Class nodes and CONTAINS edges."""
     nodes_out: list[dict[str, Any]] = []
     edges_out: list[dict[str, Any]] = []
-    seen_edge: set[tuple[str, str, str]] = set()
+    seen_edge: set[tuple[str, str, str, str]] = set()
 
     files_seen: set[str] = set()
     classes_seen: set[tuple[str, str]] = set()
 
     def add_edge(src: str, tgt: str, kind: str, **extra: Any) -> None:
-        key = (src, tgt, kind)
+        gk = str(extra.pop("graph_key", ""))
+        key = (src, tgt, kind, gk)
         if key in seen_edge:
             return
         seen_edge.add(key)
         row: dict[str, Any] = {"source": src, "target": tgt, "kind": kind, "condition": None, "confidence": 1.0}
+        if gk:
+            row["graph_key"] = gk
         row.update(extra)
         edges_out.append(row)
 
@@ -213,15 +233,16 @@ def to_stable_schema(g: nx.DiGraph) -> dict[str, Any]:
             add_edge(_file_node_id(fp), sym, _REL_CONTAINS, confidence=1.0)
 
     # --- Call edges (semantic CALLS only) ---
-    for u, v, ed in g.edges(data=True):
-        rel = ed.get("relation") or _REL_CALLS
-        if rel != _REL_CALLS:
+    for u, v, ek, ed in iter_multi_edges(g):
+        rrk = ed.get("relation") or _REL_CALLS
+        if rrk != _REL_CALLS:
             continue
         edges_out.append(
             {
                 "source": u,
                 "target": v,
                 "kind": _REL_CALLS,
+                "graph_key": ek if ek is not None else 0,
                 "condition": ed.get("condition"),
                 "confidence": float(ed.get("confidence", 1.0)),
                 "resolution": ed.get("resolution"),
@@ -235,12 +256,13 @@ def to_stable_schema(g: nx.DiGraph) -> dict[str, Any]:
                     "source": u,
                     "target": v,
                     "kind": _REL_ASYNC,
+                    "graph_key": ek if ek is not None else 0,
                     "condition": ed.get("condition"),
                     "confidence": float(ed.get("confidence", 1.0)),
                 },
             )
 
-    for u, v, ed in g.edges(data=True):
+    for u, v, ek, ed in iter_multi_edges(g):
         rk = ed.get("relation") or _REL_CALLS
         if rk == _REL_CALLS:
             continue
@@ -248,6 +270,7 @@ def to_stable_schema(g: nx.DiGraph) -> dict[str, Any]:
             u,
             v,
             str(rk),
+            graph_key=str(ek) if ek is not None else "0",
             confidence=float(ed.get("confidence", 1.0)),
             condition=ed.get("condition"),
         )

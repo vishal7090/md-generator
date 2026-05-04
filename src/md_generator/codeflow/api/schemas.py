@@ -51,6 +51,10 @@ class AnalyzeOptions(BaseModel):
     emit_graph_sqlite: bool | None = None
     emit_graph_communities: bool | None = None
     emit_llm_entry_sidecar: bool | None = None
+    include_references: bool | None = None
+    include_events: bool | None = None
+    cluster_mode: Literal["file_imports", "structural", "semantic", "hybrid"] | None = None
+    graph_query: str | None = None
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -100,6 +104,10 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     egsql = False if not raw or raw.emit_graph_sqlite is None else bool(raw.emit_graph_sqlite)
     egc = False if not raw or raw.emit_graph_communities is None else bool(raw.emit_graph_communities)
     ellm = False if not raw or raw.emit_llm_entry_sidecar is None else bool(raw.emit_llm_entry_sidecar)
+    iref = False if not raw or raw.include_references is None else bool(raw.include_references)
+    ievt = False if not raw or raw.include_events is None else bool(raw.include_events)
+    cm = "file_imports" if not raw or raw.cluster_mode is None else raw.cluster_mode
+    gq = None if not raw or raw.graph_query is None or not str(raw.graph_query).strip() else str(raw.graph_query).strip()
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -133,6 +141,10 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         cfg_path_max_depth=cpmd,
         cfg_loop_visits=clv,
         graph_include_structural=gis,
+        include_references=iref,
+        include_events=ievt,
+        cluster_mode=cm,  # type: ignore[arg-type]
+        graph_query=gq,
         intelligence_transitive_callers=itc,
         emit_system_graph_stats=esgs,
         emit_graph_sqlite=egsql,
@@ -192,6 +204,10 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "emit_graph_sqlite": cfg.emit_graph_sqlite,
         "emit_graph_communities": cfg.emit_graph_communities,
         "emit_llm_entry_sidecar": cfg.emit_llm_entry_sidecar,
+        "include_references": cfg.include_references,
+        "include_events": cfg.include_events,
+        "cluster_mode": cfg.cluster_mode,
+        "graph_query": cfg.graph_query,
     }
 
 
@@ -240,6 +256,10 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         emit_graph_sqlite=bool(data.get("emit_graph_sqlite", False)),
         emit_graph_communities=bool(data.get("emit_graph_communities", False)),
         emit_llm_entry_sidecar=bool(data.get("emit_llm_entry_sidecar", False)),
+        include_references=bool(data.get("include_references", False)),
+        include_events=bool(data.get("include_events", False)),
+        cluster_mode=data.get("cluster_mode", "file_imports"),  # type: ignore[arg-type]
+        graph_query=data.get("graph_query"),
     )
 
 

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-import networkx as nx
-
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph
 
 
 def _edge_condition(ed: dict) -> str | None:
@@ -20,7 +19,7 @@ def _edge_condition(ed: dict) -> str | None:
     return None
 
 
-def _pretty_method(g: nx.DiGraph, nid: str) -> str:
+def _pretty_method(g: CodeflowGraph, nid: str) -> str:
     if nid not in g:
         tail = nid.split("::")[-1] if "::" in nid else nid
         if "." in tail:
@@ -41,7 +40,7 @@ def _pretty_method(g: nx.DiGraph, nid: str) -> str:
     return f"{mn}()"
 
 
-def _class_method_from_id(g: nx.DiGraph, nid: str) -> tuple[str | None, str]:
+def _class_method_from_id(g: CodeflowGraph, nid: str) -> tuple[str | None, str]:
     if nid in g:
         d = g.nodes[nid]
         return d.get("class_name"), d.get("method_name") or nid.split("::")[-1].split(".")[-1]
@@ -97,7 +96,7 @@ def _role_token(method_name: str, class_name: str | None) -> str | None:
 
 def method_roles(
     sl: FlowSlice,
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     entry_id: str,
 ) -> dict[str, str]:
     """Map node id → short role phrase for Method Summary."""
@@ -133,7 +132,7 @@ def _async_suffix(ed: dict) -> str:
     return " [async]" if ed.get("async_") or ed.get("type") == "async" else ""
 
 
-def format_flow_description(sl: FlowSlice, g: nx.DiGraph) -> list[str]:
+def format_flow_description(sl: FlowSlice, g: CodeflowGraph) -> list[str]:
     """Numbered flow with optional ``if`` / ``else`` nesting from edge conditions."""
     lines: list[str] = []
     adj = _build_adjacency(sl)
@@ -229,7 +228,7 @@ def format_flow_description(sl: FlowSlice, g: nx.DiGraph) -> list[str]:
     return lines
 
 
-def format_method_summary_lines(sl: FlowSlice, g: nx.DiGraph, entry_id: str) -> list[str]:
+def format_method_summary_lines(sl: FlowSlice, g: CodeflowGraph, entry_id: str) -> list[str]:
     """``### Class`` sections with ``- method() → role`` bullets."""
     roles = method_roles(sl, g, entry_id)
     by_class: dict[str, list[tuple[str, str]]] = defaultdict(list)
@@ -248,7 +247,7 @@ def format_method_summary_lines(sl: FlowSlice, g: nx.DiGraph, entry_id: str) -> 
     return lines
 
 
-def one_line_summary(sl: FlowSlice, g: nx.DiGraph, max_chars: int = 120) -> str:
+def one_line_summary(sl: FlowSlice, g: CodeflowGraph, max_chars: int = 120) -> str:
     """First hop or two for overview table."""
     adj = _build_adjacency(sl)
     e = sl.entry_id

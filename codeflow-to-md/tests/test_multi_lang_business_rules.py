@@ -13,6 +13,7 @@ from md_generator.codeflow.parsers.base import ParserRegistry, register_defaults
 from md_generator.codeflow.parsers.go_parser import GoParser
 from md_generator.codeflow.rules.collector import collect_business_rules
 from md_generator.codeflow.core.run_config import ScanConfig
+from md_generator.codeflow.graph.multigraph_utils import edge_data_dicts
 
 
 def test_javascript_call_has_condition_label(tmp_path: Path) -> None:
@@ -28,7 +29,9 @@ def test_javascript_call_has_condition_label(tmp_path: Path) -> None:
     gb = build_graph([pr], tmp_path)
     g = gb.graph
     caller = "sample.js::f"
-    cond_edges = [v for v in g.successors(caller) if g.edges[caller, v].get("condition")]
+    cond_edges = [
+        v for v in g.successors(caller) if any(d.get("condition") for d in edge_data_dicts(g, caller, v))
+    ]
     assert cond_edges, "expected conditional edge from f()"
 
 
