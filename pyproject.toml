@@ -115,6 +115,11 @@ codeflow = [
   "networkx>=3.2.0",
   "javalang>=0.13.0",
 ]
+# Optional: horizontal workers for codeflow API (Celery + Redis). Default job path uses threads.
+codeflow-worker = [
+  "celery>=5.3.0",
+  "redis>=5.0.0",
+]
 codeflow-treesitter = [
   "tree-sitter>=0.21.0",
   "tree-sitter-javascript>=0.21.0",

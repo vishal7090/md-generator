@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from pathlib import Path
 
+import javalang.tree
+
 from md_generator.codeflow.models.ir import EntryKind, EntryRecord
+
+logger = logging.getLogger(__name__)
 
 
 def _sid(key: str, cls: str | None, name: str) -> str:
@@ -13,13 +19,16 @@ def _sid(key: str, cls: str | None, name: str) -> str:
     return f"{key}::{name}"
 
 
-_PORTLET_BASES = frozenset(
+_PORTLET_BASES_DEFAULT = frozenset(
     {
         "GenericPortlet",
         "MVCPortlet",
         "LiferayPortlet",
         "BaseStrutsPortlet",
         "Portlet",
+        "BasePortlet",
+        "CustomPortlet",
+        "BaseMVCPortlet",
     },
 )
 
@@ -47,10 +56,14 @@ def _reference_simple_name(type_obj: object) -> str | None:
     return last
 
 
-def _extends_portlet_base(t: object) -> bool:
+def _effective_bases(extra: frozenset[str] | None) -> frozenset[str]:
+    return _PORTLET_BASES_DEFAULT | (extra or frozenset())
+
+
+def _extends_portlet_base(t: object, bases: frozenset[str]) -> bool:
     for ext in getattr(t, "extends", None) or []:
         tail = _reference_simple_name(ext)
-        if tail and tail in _PORTLET_BASES:
+        if tail and tail in bases:
             return True
     return False
 
@@ -77,15 +90,51 @@ def _portlet_lifecycle_names() -> frozenset[str]:
     )
 
 
-def detect_liferay_portlet_entries(path: Path, project_root: Path) -> list[EntryRecord]:
-    import javalang
+_LIFECYCLE_NAME_RE = re.compile(
+    r"\b(processAction|serveResource|doView|doEdit|doHelp|doConfig|render)\s*\(",
+)
 
+
+def _file_might_contain_portlet(text: str) -> bool:
+    """Loose prefilter: avoid parsing obviously unrelated Java when possible."""
+    if "Portlet" in text or "portlet" in text.lower():
+        return True
+    if "@ProcessAction" in text or "@RenderMapping" in text or "@ResourceMapping" in text:
+        return True
+    if _LIFECYCLE_NAME_RE.search(text):
+        return True
+    if re.search(r"\bextends\s+\w*Portlet\w*", text):
+        return True
+    return False
+
+
+def _iter_class_declarations(cdecl: object, prefix: tuple[str, ...]) -> list[tuple[str, object]]:
+    """Flatten outer and nested class declarations: (qualified_name, ClassDeclaration)."""
+    out: list[tuple[str, object]] = []
+    name = getattr(cdecl, "name", None) or ""
+    parts = prefix + (name,)
+    fq = ".".join(parts)
+    out.append((fq, cdecl))
+    for item in getattr(cdecl, "body", None) or []:
+        if isinstance(item, javalang.tree.ClassDeclaration):
+            out.extend(_iter_class_declarations(item, parts))
+    return out
+
+
+def detect_liferay_portlet_entries(
+    path: Path,
+    project_root: Path,
+    *,
+    extra_portlet_bases: frozenset[str] | None = None,
+) -> list[EntryRecord]:
+    bases = _effective_bases(extra_portlet_bases)
     text = path.read_text(encoding="utf-8", errors="replace")
-    if "Portlet" not in text and "ProcessAction" not in text and "MVCPortlet" not in text and "GenericPortlet" not in text:
+    if not _file_might_contain_portlet(text):
         return []
     try:
         tree = javalang.parse.parse(text)
-    except Exception:
+    except Exception as e:
+        logger.debug("liferay javalang parse failed %s: %s", path, e)
         return []
 
     try:
@@ -93,41 +142,55 @@ def detect_liferay_portlet_entries(path: Path, project_root: Path) -> list[Entry
     except ValueError:
         key = path.as_posix()
 
+    lifecycle = _portlet_lifecycle_names()
+    seen: set[str] = set()
     out: list[EntryRecord] = []
-    for t in tree.types or []:
-        cls_name = getattr(t, "name", None)
-        if not cls_name:
+
+    for top in tree.types or []:
+        if not isinstance(top, javalang.tree.ClassDeclaration):
             continue
-        portlet_class = _extends_portlet_base(t)
-        for m in getattr(t, "methods", None) or []:
-            name = getattr(m, "name", None)
-            if not name:
-                continue
-            anns = _annotation_names(m)
-            if anns & _MAPPING_ANNS:
+        for fq_name, cdecl in _iter_class_declarations(top, ()):
+            portlet_class = _extends_portlet_base(cdecl, bases)
+            for m in getattr(cdecl, "methods", None) or []:
+                name = getattr(m, "name", None)
+                if not name:
+                    continue
+                sid = _sid(key, fq_name, name)
+                anns = _annotation_names(m)
                 pos = getattr(m, "position", None)
                 line = int(getattr(pos, "line", 0) or 0) if pos else 0
-                hit = sorted(anns & _MAPPING_ANNS)[0]
-                out.append(
-                    EntryRecord(
-                        symbol_id=_sid(key, cls_name, name),
-                        kind=EntryKind.PORTLET,
-                        label=f"Liferay portlet mapping ({hit})",
-                        file_path=str(path.resolve()),
-                        line=line,
-                    ),
-                )
-                continue
-            if portlet_class and name in _portlet_lifecycle_names():
-                pos = getattr(m, "position", None)
-                line = int(getattr(pos, "line", 0) or 0) if pos else 0
-                out.append(
-                    EntryRecord(
-                        symbol_id=_sid(key, cls_name, name),
-                        kind=EntryKind.PORTLET,
-                        label=f"Liferay portlet lifecycle ({name})",
-                        file_path=str(path.resolve()),
-                        line=line,
-                    ),
-                )
+
+                if anns & _MAPPING_ANNS:
+                    if sid in seen:
+                        continue
+                    seen.add(sid)
+                    hit = sorted(anns & _MAPPING_ANNS)[0]
+                    out.append(
+                        EntryRecord(
+                            symbol_id=sid,
+                            kind=EntryKind.PORTLET,
+                            label=f"Liferay portlet mapping ({hit})",
+                            file_path=str(path.resolve()),
+                            line=line,
+                        ),
+                    )
+                    continue
+
+                if name in lifecycle:
+                    if sid in seen:
+                        continue
+                    seen.add(sid)
+                    reason = "lifecycle" if portlet_class else "lifecycle_heuristic"
+                    out.append(
+                        EntryRecord(
+                            symbol_id=sid,
+                            kind=EntryKind.PORTLET,
+                            label=f"Liferay portlet {reason} ({name})",
+                            file_path=str(path.resolve()),
+                            line=line,
+                        ),
+                    )
+
+    if out:
+        logger.debug("liferay: %d portlet entries from %s", len(out), path)
     return out

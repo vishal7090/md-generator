@@ -5,6 +5,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal
 
+StructuralRelation = Literal[
+    "IMPORTS",
+    "INHERITS",
+    "IMPLEMENTS",
+    "REFERENCES",
+    "EVENT",
+    "ASYNC",
+    "CONTAINS",
+]
+
 
 RuleSource = Literal["branch", "validation", "sql_trigger", "predicate"]
 RuleConfidence = Literal["high", "medium", "low"]
@@ -87,6 +97,17 @@ class EntryRecord:
     line: int
 
 
+@dataclass(frozen=True, slots=True)
+class StructuralEdge:
+    """Non-call graph edge (merged into DiGraph when ``graph_include_structural`` is enabled)."""
+
+    source_id: str
+    target_id: str
+    relation: StructuralRelation
+    confidence: float = 1.0
+    line: int | None = None
+
+
 @dataclass
 class FileParseResult:
     path: Path
@@ -96,3 +117,9 @@ class FileParseResult:
     branches: list[BranchPoint] = field(default_factory=list)
     entries: list[EntryRecord] = field(default_factory=list)
     rules: list[BusinessRule] = field(default_factory=list)
+    # Normalized IR methods (optional CFG path); elements are ``IRMethod`` from ``models.ir_cfg``.
+    ir_methods: list[object] = field(default_factory=list)
+    # Structural edges (IMPORTS / INHERITS / …); merged in ``build_graph`` when enabled.
+    structural_edges: list[StructuralEdge] = field(default_factory=list)
+    # Java compilation unit package (``a.b.c``), for FQN resolution; other languages ignore.
+    java_package: str | None = None

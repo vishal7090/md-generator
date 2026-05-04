@@ -13,6 +13,8 @@ from md_generator.codeflow.analyzers.flow_analyzer import slice_from_entry
 from md_generator.codeflow.detectors.entry_detector import apply_entry_detectors, resolve_entry_symbol_ids
 from md_generator.codeflow.detectors.entry_rank import sort_entry_ids
 from md_generator.codeflow.graph.builder import GraphBuildResult, build_graph, graph_to_serializable
+from md_generator.codeflow.graph.export_schema import to_stable_schema
+from md_generator.codeflow.generators.flow_tree import flow_tree_to_serializable
 from md_generator.codeflow.generators.html import write_html_bundle
 from md_generator.codeflow.generators.business_rules_markdown import (
     write_business_rules_markdown,
@@ -32,7 +34,9 @@ from md_generator.codeflow.ingestion.loader import LoadedWorkspace, collect_sour
 from md_generator.codeflow.lang_dispatch import lang_for_path, normalize_language_filter, should_parse_file_lang
 from md_generator.codeflow.models.ir import EntryRecord, FileParseResult
 from md_generator.codeflow.parsers.base import ParserRegistry, register_defaults
+from md_generator.codeflow.parsers.ir_enrich import enrich_parse_results_with_ir
 from md_generator.codeflow.core.run_config import ScanConfig
+from md_generator.codeflow.models.ir_cfg import IRMethod
 
 
 def _read_entries_file(path: Path) -> list[str]:
@@ -177,6 +181,25 @@ def _write_scan_summary(
         f"- **Output slugs emitted:** {emitted_slugs}",
         f"- **entry_fallback:** `{cfg.entry_fallback}`",
         f"- **emit_entry_per_method:** {cfg.emit_entry_per_method}",
+    ]
+    if cfg.emit_entry_per_method:
+        lines.append(
+            "- **Per-entry output:** nested under `methods/<slug>/` when using per-method mode",
+        )
+    lines += [
+        f"- **emit_graph_schema:** {cfg.emit_graph_schema}",
+        f"- **intelligence_list_cap:** {cfg.intelligence_list_cap}",
+        f"- **emit_cfg:** {cfg.emit_cfg}",
+        f"- **cfg_max_nodes:** {cfg.cfg_max_nodes}",
+        f"- **cfg_inline_calls:** {cfg.cfg_inline_calls}",
+        f"- **cfg_call_depth:** {cfg.cfg_call_depth}",
+        f"- **cfg_max_paths:** {cfg.cfg_max_paths}",
+        f"- **cfg_path_max_depth:** {cfg.cfg_path_max_depth}",
+        f"- **cfg_loop_visits:** {cfg.cfg_loop_visits}",
+        f"- **graph_include_structural:** {cfg.graph_include_structural}",
+        f"- **intelligence_transitive_callers:** {cfg.intelligence_transitive_callers}",
+        f"- **emit_system_graph_stats:** {cfg.emit_system_graph_stats}",
+        f"- **emit_llm_entry_sidecar:** {cfg.emit_llm_entry_sidecar}",
         "",
     ]
     if warnings:
@@ -206,16 +229,27 @@ def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[F
         pr = reg.parse_file(p, ws.root, lang)
         if pr:
             results.append(pr)
-    apply_entry_detectors(files, ws.root, results)
+    apply_entry_detectors(files, ws.root, results, cfg)
     return results
 
 
 def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Path:
     """Analyze code under workspace root and write outputs."""
+    if cfg.verbose:
+        import logging
+
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
+        logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
+
     ws = workspace or LoadedWorkspace(root=cfg.project_root.resolve(), cleanup_dir=None)
 
     parse_results = _parse_results_for_workspace(ws, cfg)
-    gb: GraphBuildResult = build_graph(parse_results, ws.root)
+    enrich_parse_results_with_ir(parse_results, cfg, ws.root)
+    gb: GraphBuildResult = build_graph(
+        parse_results,
+        ws.root,
+        include_structural=cfg.graph_include_structural,
+    )
     g = gb.graph
 
     out = cfg.output_path
@@ -232,6 +266,16 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
     include_map = cfg.parsed_include()
     overview_rows: list[tuple[str, str, str, str, str]] = []
     emitted_slugs = 0
+    entry_base = out / "methods" if cfg.emit_entry_per_method else out
+    if cfg.emit_entry_per_method:
+        entry_base.mkdir(parents=True, exist_ok=True)
+    link_prefix = "methods/" if cfg.emit_entry_per_method else ""
+
+    method_cfgs_for_cfg = None
+    if cfg.emit_cfg:
+        from md_generator.codeflow.graph.call_expander import build_method_cfg_index
+
+        method_cfgs_for_cfg = build_method_cfg_index(parse_results, cfg.cfg_max_nodes)
 
     for eid in entry_ids:
         if include_map:
@@ -242,11 +286,19 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         emitted_slugs += 1
         sl = slice_from_entry(g, eid, cfg.depth)
         slug = _slug(eid)
-        sub = out / slug
+        sub = entry_base / slug
         sub.mkdir(parents=True, exist_ok=True)
         rec = entry_by_symbol.get(eid)
         if "md" in fmts:
-            write_flow_markdown(sub / "flow.md", eid, sl, g)
+            write_flow_markdown(
+                sub / "flow.md",
+                eid,
+                sl,
+                g,
+                list_cap=cfg.intelligence_list_cap,
+                intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                graph_include_structural=cfg.graph_include_structural,
+            )
             rules = None
             if cfg.business_rules:
                 from md_generator.codeflow.rules.collector import collect_business_rules
@@ -264,7 +316,17 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     rules,
                     entry_hint=eid,
                 )
-                write_entry_markdown(sub / "entry.md", eid, sl, g, rec, rules=rules)
+                write_entry_markdown(
+                    sub / "entry.md",
+                    eid,
+                    sl,
+                    g,
+                    rec,
+                    rules=rules,
+                    intelligence_cap=cfg.intelligence_list_cap,
+                    graph_include_structural=cfg.graph_include_structural,
+                    intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                )
                 if cfg.business_rules_combined:
                     write_combined_entry_markdown(
                         sub / "entry.md",
@@ -272,7 +334,17 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                         sub / "entry.combined.md",
                     )
             else:
-                write_entry_markdown(sub / "entry.md", eid, sl, g, rec, rules=None)
+                write_entry_markdown(
+                    sub / "entry.md",
+                    eid,
+                    sl,
+                    g,
+                    rec,
+                    rules=None,
+                    intelligence_cap=cfg.intelligence_list_cap,
+                    graph_include_structural=cfg.graph_include_structural,
+                    intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                )
             if eid in g:
                 k = rec.kind.value if rec else g.nodes[eid].get("entry_kind")
             else:
@@ -282,10 +354,57 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     slug,
                     type_label_for_kind(k),
                     pretty_start_method(g, eid),
-                    f"[entry](./{slug}/entry.md)",
+                    f"[entry](./{link_prefix}{slug}/entry.md)",
                     one_line_summary(sl, g),
                 ),
             )
+            if cfg.emit_llm_entry_sidecar:
+                from md_generator.codeflow.generators.entry_markdown import write_llm_entry_sidecar
+
+                write_llm_entry_sidecar(sub, eid, emit_cfg=cfg.emit_cfg)
+        if cfg.emit_flow_tree_json:
+            (sub / "flow-tree.json").write_text(
+                json.dumps(flow_tree_to_serializable(eid, sl, g), indent=2),
+                encoding="utf-8",
+            )
+        if cfg.emit_cfg:
+            ir_m = _lookup_ir_method(eid, parse_results)
+            if ir_m is not None:
+                from md_generator.codeflow.graph.call_expander import expand_cfg_calls
+                from md_generator.codeflow.graph.cfg_builder import build_cfg_from_ir
+                from md_generator.codeflow.graph.path_enumerator import PathResult, enumerate_paths, find_cfg_end_id, find_cfg_start_id
+                from md_generator.codeflow.generators.cfg_paths_markdown import paths_to_markdown
+                from md_generator.codeflow.generators.cfg_render import cfg_to_markdown_section, write_cfg_paths_sidecars, write_cfg_sidecar
+
+                c = build_cfg_from_ir(ir_m, max_nodes=cfg.cfg_max_nodes)
+                c = expand_cfg_calls(
+                    c,
+                    method_cfgs_for_cfg or {},
+                    max_call_depth=cfg.cfg_call_depth,
+                    inline_calls=cfg.cfg_inline_calls,
+                )
+                write_cfg_sidecar(sub, c)
+                sid = find_cfg_start_id(c)
+                eid_end = find_cfg_end_id(c)
+                path_res = (
+                    enumerate_paths(
+                        c,
+                        sid,
+                        eid_end,
+                        max_paths=cfg.cfg_max_paths,
+                        max_depth=cfg.cfg_path_max_depth,
+                        max_loop_visits=cfg.cfg_loop_visits,
+                    )
+                    if sid and eid_end
+                    else PathResult()
+                )
+                write_cfg_paths_sidecars(sub, c, path_res.paths, truncated=path_res.truncated)
+                if "md" in fmts:
+                    flow_path = sub / "flow.md"
+                    extra = cfg_to_markdown_section(c) + "\n" + paths_to_markdown(
+                        c, path_res.paths, c.nodes, truncated=path_res.truncated
+                    )
+                    flow_path.write_text(flow_path.read_text(encoding="utf-8") + "\n" + extra, encoding="utf-8")
         if "mermaid" in fmts:
             write_flow_mermaid(sub / "flow.mmd", eid, sl)
             write_sequence_mermaid(sub / "sequence.mmd", eid, sl)
@@ -300,12 +419,17 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
     if "json" in fmts:
         full = graph_to_serializable(g)
         (out / "graph-full.json").write_text(json.dumps(full, indent=2), encoding="utf-8")
+        if cfg.emit_graph_schema:
+            sch = to_stable_schema(g)
+            (out / "graph-schema.json").write_text(json.dumps(sch, indent=2), encoding="utf-8")
 
     if "md" in fmts and overview_rows:
         write_system_overview(
             out / "system_overview.md",
             overview_rows,
             project_hint=f"Project: `{ws.root.resolve().as_posix()}`",
+            graph=g if cfg.emit_system_graph_stats else None,
+            emit_graph_stats=cfg.emit_system_graph_stats,
         )
 
     if cfg.write_scan_summary:
@@ -321,6 +445,14 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         )
 
     return out
+
+
+def _lookup_ir_method(entry_id: str, parse_results: list[FileParseResult]) -> IRMethod | None:
+    for pr in parse_results:
+        for ir in pr.ir_methods:
+            if isinstance(ir, IRMethod) and ir.symbol_id == entry_id:
+                return ir
+    return None
 
 
 def _slug(entry_id: str) -> str:
@@ -358,6 +490,23 @@ def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> byt
             emit_entry_filter=cfg.emit_entry_filter,
             entries_file=cfg.entries_file,
             write_scan_summary=cfg.write_scan_summary,
+            liferay_portlet_base_classes=cfg.liferay_portlet_base_classes,
+            codeflow_config_path=cfg.codeflow_config_path,
+            emit_flow_tree_json=cfg.emit_flow_tree_json,
+            verbose=cfg.verbose,
+            emit_graph_schema=cfg.emit_graph_schema,
+            intelligence_list_cap=cfg.intelligence_list_cap,
+            emit_cfg=cfg.emit_cfg,
+            cfg_max_nodes=cfg.cfg_max_nodes,
+            cfg_inline_calls=cfg.cfg_inline_calls,
+            cfg_call_depth=cfg.cfg_call_depth,
+            cfg_max_paths=cfg.cfg_max_paths,
+            cfg_path_max_depth=cfg.cfg_path_max_depth,
+            cfg_loop_visits=cfg.cfg_loop_visits,
+            graph_include_structural=cfg.graph_include_structural,
+            intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+            emit_system_graph_stats=cfg.emit_system_graph_stats,
+            emit_llm_entry_sidecar=cfg.emit_llm_entry_sidecar,
         )
         run_scan(cfg2, workspace=wc)
         buf = td / "bundle.zip"

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from md_generator.codeflow.core.extractor import run_scan
 from md_generator.codeflow.core.run_config import ScanConfig
-from md_generator.codeflow.ingestion.loader import load_workspace, source_file_extensions
+from md_generator.codeflow.ingestion.git_loader import (
+    GitLoaderError,
+    clean_all_cache,
+    clone_or_update_repo,
+    is_git_remote,
+)
+from md_generator.codeflow.ingestion.loader import LoadedWorkspace, load_workspace, source_file_extensions
 
 
 def _parse_formats(s: str | None) -> tuple[str, ...]:
@@ -20,6 +27,12 @@ def _parse_entry(s: str | None) -> list[str] | None:
     if not s or not str(s).strip():
         return None
     return [x.strip() for x in str(s).split(",") if x.strip()]
+
+
+def _parse_csv_identifiers(s: str | None) -> tuple[str, ...]:
+    if not s or not str(s).strip():
+        return ()
+    return tuple(x.strip() for x in str(s).split(",") if x.strip())
 
 
 def _normalize_include(raw: str | None) -> str | None:
@@ -47,8 +60,14 @@ def _normalize_include(raw: str | None) -> str | None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Analyze source code execution flows → Markdown/Mermaid/graph.")
     sub = p.add_subparsers(dest="cmd", required=True)
-    scan = sub.add_parser("scan", help="Scan a folder, file, or zip archive")
-    scan.add_argument("path", type=Path, help="Directory, source file, or .zip archive")
+    scan = sub.add_parser("scan", help="Scan a folder, file, .zip archive, or Git remote URL")
+    scan.add_argument(
+        "path",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Local directory, source file, .zip, or https/git remote URL (omit when using --clean-git-cache only)",
+    )
     scan.add_argument("--output", "-o", type=Path, default=None, help="Output directory")
     scan.add_argument("--entry", default=None, help="Comma-separated symbol ids (Class.method style)")
     scan.add_argument(
@@ -126,6 +145,145 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Skip writing scan-summary.md at output root",
     )
+    scan.add_argument(
+        "--liferay-portlet-bases",
+        default=None,
+        help="Extra Liferay portlet superclass simple names (comma-separated); merged with built-in defaults",
+    )
+    scan.add_argument(
+        "--codeflow-config",
+        type=Path,
+        default=None,
+        help="Path to codeflow.yaml (default: <project_root>/codeflow.yaml if present)",
+    )
+    scan.add_argument(
+        "--emit-flow-tree-json",
+        action="store_true",
+        default=False,
+        help="Write flow-tree.json (static DFS tree from the flow slice) beside each entry output",
+    )
+    scan.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable DEBUG logging for md_generator.codeflow",
+    )
+    scan.add_argument(
+        "--emit-graph-schema",
+        action="store_true",
+        default=False,
+        help="With json format, also write graph-schema.json (stable Node/Edge view with File/Class hierarchy)",
+    )
+    scan.add_argument(
+        "--intelligence-list-cap",
+        type=int,
+        default=80,
+        help="Max items for Called by / Impact lists in Markdown (default: 80)",
+    )
+    scan.add_argument(
+        "--emit-cfg",
+        action="store_true",
+        default=False,
+        help="Build IR-based CFG per entry (cfg.json, cfg.mmd; append CFG Mermaid to flow.md when md is enabled)",
+    )
+    scan.add_argument(
+        "--cfg-max-nodes",
+        type=int,
+        default=500,
+        help="Safety cap on CFG nodes when using --emit-cfg (default: 500)",
+    )
+    scan.add_argument(
+        "--cfg-inline-calls",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="When using --emit-cfg, inline callee CFGs at CALL nodes (default: off)",
+    )
+    scan.add_argument(
+        "--cfg-call-depth",
+        type=int,
+        default=3,
+        help="Max CALL inlining depth when --cfg-inline-calls (default: 3)",
+    )
+    scan.add_argument(
+        "--cfg-max-paths",
+        type=int,
+        default=100,
+        help="Max enumerated START→END paths when using --emit-cfg (default: 100)",
+    )
+    scan.add_argument(
+        "--cfg-path-max-depth",
+        type=int,
+        default=1000,
+        help="Max DFS depth for path enumeration (default: 1000)",
+    )
+    scan.add_argument(
+        "--cfg-loop-visits",
+        type=int,
+        default=2,
+        help="Max LOOP_HDR revisits per path before forcing exit edges (default: 2)",
+    )
+    scan.add_argument(
+        "--graph-include-structural",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Merge parser structural edges (IMPORTS / INHERITS / …; Java) into the graph (default: off)",
+    )
+    scan.add_argument(
+        "--intelligence-transitive-callers",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="List transitive callers in Called By sections (default: direct only)",
+    )
+    scan.add_argument(
+        "--emit-system-graph-stats",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Append graph inventory (counts, top out-degree) to system_overview.md",
+    )
+    scan.add_argument(
+        "--emit-llm-entry-sidecar",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write entry.llm.md beside each entry.md (pointers for LLM workflows)",
+    )
+    scan.add_argument(
+        "--git-branch",
+        "--branch",
+        dest="git_branch",
+        default=None,
+        help="After clone/update, check out this branch (Git remote input only)",
+    )
+    scan.add_argument(
+        "--git-commit",
+        "--commit",
+        dest="git_commit",
+        default=None,
+        help="After branch (or default), check out this commit SHA (Git remote input only)",
+    )
+    scan.add_argument(
+        "--git-auth-token",
+        default=None,
+        help="HTTPS token (injected per host; never printed). Prefer env-specific URLs in CI.",
+    )
+    scan.add_argument(
+        "--git-ssh-key",
+        type=Path,
+        default=None,
+        help="Path to SSH private key for git@… remotes (sets GIT_SSH_COMMAND for clone/pull)",
+    )
+    scan.add_argument(
+        "--no-git-cache",
+        action="store_true",
+        default=False,
+        help="Delete cached clone for this URL and re-clone fresh",
+    )
+    scan.add_argument(
+        "--clean-git-cache",
+        action="store_true",
+        default=False,
+        help="Remove all cached Git clones under the codeflow cache dir, then exit (no scan)",
+    )
     return p
 
 
@@ -135,18 +293,48 @@ def main(argv: list[str] | None = None) -> int:
     if ns.cmd != "scan":
         return 2
 
-    src = Path(ns.path).expanduser().resolve()
-    ws = load_workspace(path=src)
-    try:
+    if ns.clean_git_cache:
+        clean_all_cache()
+        print("Removed codeflow Git clone cache.", file=sys.stderr)
+        return 0
+
+    if not ns.path or not str(ns.path).strip():
+        print("codeflow scan: error: path is required (unless using --clean-git-cache)", file=sys.stderr)
+        return 2
+
+    raw = str(ns.path).strip()
+    if ns.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
+        logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
+
+    paths_override: list[Path] | None = None
+    if is_git_remote(raw):
+        try:
+            root = clone_or_update_repo(
+                raw,
+                branch=ns.git_branch,
+                commit=ns.git_commit,
+                no_cache=bool(ns.no_git_cache),
+                auth_token=ns.git_auth_token,
+                ssh_key_path=ns.git_ssh_key,
+            )
+        except GitLoaderError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        ws = LoadedWorkspace(root=root, cleanup_dir=None)
+    else:
+        src = Path(raw).expanduser().resolve()
+        ws = load_workspace(path=src)
         root = ws.root
-        paths_override: list[Path] | None = None
         if src.is_file() and src.suffix.lower() in source_file_extensions():
             paths_override = [src]
 
+    try:
         out = ns.output
         if out is None:
             out = Path.cwd() / "codeflow-out"
         entries_file = Path(ns.entries_file).expanduser().resolve() if ns.entries_file else None
+        codeflow_cfg = Path(ns.codeflow_config).expanduser().resolve() if ns.codeflow_config else None
         cfg = ScanConfig(
             project_root=root,
             paths_override=paths_override,
@@ -171,12 +359,29 @@ def main(argv: list[str] | None = None) -> int:
             emit_entry_filter=ns.emit_entry_filter,
             entries_file=entries_file,
             write_scan_summary=not bool(ns.no_scan_summary),
+            liferay_portlet_base_classes=_parse_csv_identifiers(ns.liferay_portlet_bases),
+            codeflow_config_path=codeflow_cfg,
+            emit_flow_tree_json=bool(ns.emit_flow_tree_json),
+            verbose=bool(ns.verbose),
+            emit_graph_schema=bool(ns.emit_graph_schema),
+            intelligence_list_cap=int(ns.intelligence_list_cap),
+            emit_cfg=bool(ns.emit_cfg),
+            cfg_max_nodes=int(ns.cfg_max_nodes),
+            cfg_inline_calls=bool(ns.cfg_inline_calls),
+            cfg_call_depth=int(ns.cfg_call_depth),
+            cfg_max_paths=int(ns.cfg_max_paths),
+            cfg_path_max_depth=int(ns.cfg_path_max_depth),
+            cfg_loop_visits=int(ns.cfg_loop_visits),
+            graph_include_structural=bool(ns.graph_include_structural),
+            intelligence_transitive_callers=bool(ns.intelligence_transitive_callers),
+            emit_system_graph_stats=bool(ns.emit_system_graph_stats),
+            emit_llm_entry_sidecar=bool(ns.emit_llm_entry_sidecar),
         )
         run_scan(cfg, workspace=ws)
         print(str(cfg.output_path.resolve()))
         return 0
     finally:
-        ws.close()
+        ws.close()  # no-op for Git cache / plain dirs; removes zip temp dirs
 
 
 if __name__ == "__main__":

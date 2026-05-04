@@ -94,8 +94,38 @@ def test_emit_entry_per_method_creates_multiple_slugs(tmp_path: Path) -> None:
         business_rules=False,
     )
     run_scan(cfg)
-    dirs = [p.name for p in out.iterdir() if p.is_dir()]
+    methods = out / "methods"
+    assert methods.is_dir()
+    dirs = [p.name for p in methods.iterdir() if p.is_dir()]
     assert len(dirs) >= 3
+
+
+def test_emit_graph_schema_writes_json(tmp_path: Path) -> None:
+    root = _fixture_root("java_cond")
+    out = tmp_path / "out_schema"
+    cfg = ScanConfig(
+        project_root=root,
+        output_path=out,
+        formats=("json",),
+        languages="java",
+        emit_graph_schema=True,
+        business_rules=False,
+    )
+    run_scan(cfg)
+    path = out / "graph-schema.json"
+    assert path.is_file()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert "nodes" in data and "edges" in data
+
+
+def test_java_inner_class_symbol_in_graph(tmp_path: Path) -> None:
+    root = _fixture_root("java_inner")
+    path = root / "inner" / "InnerHost.java"
+    pr = JavaParser().parse_file(path, root)
+    inner_sid = "inner/InnerHost.java::InnerHost.Inner.innerMethod"
+    assert any("InnerHost.Inner.innerMethod" in s or "Inner.innerMethod" in s for s in pr.symbol_ids)
+    gb = build_graph([pr], root)
+    assert inner_sid in gb.graph
 
 
 def test_entries_file_selects_subset(tmp_path: Path) -> None:

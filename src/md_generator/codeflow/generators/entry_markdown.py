@@ -9,6 +9,13 @@ import networkx as nx
 
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
 from md_generator.codeflow.generators.flow_summary import format_flow_description, format_method_summary_lines
+from md_generator.codeflow.graph import relations as graph_rel
+from md_generator.codeflow.graph.enricher import (
+    called_by_direct,
+    called_by_transitive,
+    impact_descendants,
+    structural_dependency_bullets,
+)
 from md_generator.codeflow.models.ir import BusinessRule, EntryKind, EntryRecord
 
 
@@ -79,6 +86,49 @@ def _async_event_lines(sl: FlowSlice, g: nx.DiGraph) -> list[str]:
     return lines
 
 
+def _collect_entry_tags(entry_id: str, g: nx.DiGraph) -> list[str]:
+    if entry_id not in g:
+        return []
+    d = g.nodes[entry_id]
+    tags = {str(x) for x in (d.get("tags") or []) if x}
+    for ek in ("entry_kind", "type"):
+        v = d.get(ek)
+        if v:
+            tags.add(str(v))
+    for _, _succ, ed in g.out_edges(entry_id, data=True):
+        if ed.get("async_") or ed.get("type") == "async":
+            tags.add("async_outbound")
+            break
+    return sorted(tags)
+
+
+def _graph_inventory_lines(graph: nx.DiGraph, top_n: int = 10) -> list[str]:
+    from md_generator.codeflow.graph.enricher import call_graph_view
+
+    rel_counts: dict[str, int] = {}
+    for _, _, ed in graph.edges(data=True):
+        k = str(ed.get("relation") or graph_rel.REL_CALLS)
+        rel_counts[k] = rel_counts.get(k, 0) + 1
+    lines = [
+        "## Graph inventory",
+        "",
+        f"- **Nodes:** {graph.number_of_nodes()}",
+        f"- **Edges:** {graph.number_of_edges()}",
+        "",
+        "**Edges by relation**",
+        "",
+    ]
+    for k in sorted(rel_counts.keys()):
+        lines.append(f"- `{k}`: {rel_counts[k]}")
+    lines += ["", f"**Top call-graph out-degree (first {top_n})**", ""]
+    cg = call_graph_view(graph)
+    ranked = sorted(((n, cg.out_degree(n)) for n in cg.nodes()), key=lambda t: -t[1])[:top_n]
+    for n, deg in ranked:
+        lines.append(f"- `{n}` → {deg}")
+    lines.append("")
+    return lines
+
+
 def _decision_bullets(sl: FlowSlice) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -103,6 +153,10 @@ def write_entry_markdown(
     g: nx.DiGraph,
     entry_record: EntryRecord | None,
     rules: Sequence[BusinessRule] | None = None,
+    *,
+    intelligence_cap: int = 80,
+    graph_include_structural: bool = False,
+    intelligence_transitive_callers: bool = False,
 ) -> None:
     lines: list[str] = []
     lines.append("# Execution Flow Documentation")
@@ -133,6 +187,70 @@ def write_entry_markdown(
     lines.append("")
     lines.extend(format_method_summary_lines(sl, g, entry_id))
     lines.append("")
+
+    if intelligence_transitive_callers:
+        cb = called_by_transitive(g, entry_id, intelligence_cap)
+        cb_blurb = "*Transitive callers (ancestors in call graph; static analysis; capped).*"
+    else:
+        cb = called_by_direct(g, entry_id, intelligence_cap)
+        cb_blurb = "*Direct callers (full call graph; static analysis; capped).*"
+    im = impact_descendants(g, entry_id, intelligence_cap)
+    lines.append("## Called By")
+    lines.append("")
+    lines.append(cb_blurb)
+    lines.append("")
+    if cb:
+        for x in cb:
+            lines.append(f"- `{x}`")
+        if len(cb) >= intelligence_cap:
+            lines.append(f"- *…truncated at {intelligence_cap} items.*")
+    else:
+        lines.append("*None in call graph or entry not found.*")
+    lines.append("")
+    lines.append("## Impact")
+    lines.append("")
+    lines.append("*Transitive callees from this entry (call graph; capped).*")
+    lines.append("")
+    if im:
+        for x in im:
+            lines.append(f"- `{x}`")
+        if len(im) >= intelligence_cap:
+            lines.append(f"- *…truncated at {intelligence_cap} items.*")
+    else:
+        lines.append("*None or empty downstream.*")
+    lines.append("")
+
+    lines.append("## Dependencies")
+    lines.append("")
+    if graph_include_structural:
+        dep = structural_dependency_bullets(g, entry_id, intelligence_cap)
+        if dep:
+            lines.extend(dep)
+            if len(dep) >= intelligence_cap:
+                lines.append(f"- *…truncated at {intelligence_cap} items.*")
+        else:
+            lines.append(
+                "*No structural edges for this symbol's file/class, or class context missing. "
+                "Use Java sources with `--graph-include-structural`.*",
+            )
+    else:
+        lines.append(
+            "Enable **`--graph-include-structural`** (Java) to list imports and inheritance here. "
+            "Structural view is also summarized in `graph-schema.json` when `--emit-graph-schema` is used with `json`.",
+        )
+    lines.append("")
+
+    if entry_id in g:
+        d = g.nodes[entry_id]
+        lines.append("## Metadata")
+        lines.append("")
+        lines.append(f"- **File:** `{_md_escape(str(d.get('file_path', '')))}`")
+        lines.append(f"- **Class:** `{_md_escape(str(d.get('class_name', '')))}`")
+        lines.append(f"- **Language:** `{_md_escape(str(d.get('language', '')))}`")
+        tag_list = _collect_entry_tags(entry_id, g)
+        if tag_list:
+            lines.append(f"- **Tags:** {', '.join(_md_escape(t) for t in tag_list)}")
+        lines.append("")
 
     async_lines = _async_event_lines(sl, g)
     lines.append("## Async / Event Flow")
@@ -172,11 +290,28 @@ def write_entry_markdown(
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def write_llm_entry_sidecar(sub: Path, entry_id: str, *, emit_cfg: bool = False) -> None:
+    """Short pointer doc for LLM consumption (avoids duplicating full entry.md)."""
+    lines = [
+        "# LLM-oriented entry summary",
+        "",
+        f"- **Entry symbol:** `{entry_id}`",
+        "- **Full narrative:** [entry.md](./entry.md)",
+        "- **Flat call / condition list:** [flow.md](./flow.md)",
+    ]
+    if emit_cfg:
+        lines.append("- **CFG paths (when emitted):** [cfg-paths.md](./cfg-paths.md)")
+    lines.append("")
+    (sub / "entry.llm.md").write_text("\n".join(lines), encoding="utf-8")
+
+
 def write_system_overview(
     path: Path,
     rows: list[tuple[str, str, str, str, str]],
     *,
     project_hint: str | None = None,
+    graph: nx.DiGraph | None = None,
+    emit_graph_stats: bool = False,
 ) -> None:
     """Write root overview. Each row: ``(slug, type_label, start_method, link_line, one_line)``.
 
@@ -196,4 +331,6 @@ def write_system_overview(
         safe = summary.replace("|", "\\|")
         lines.append(f"| {typ} | `{start_m}` | {link} | {safe} |")
     lines.append("")
+    if emit_graph_stats and graph is not None:
+        lines.extend(_graph_inventory_lines(graph))
     path.write_text("\n".join(lines), encoding="utf-8")

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import javalang.tree
 
+from md_generator.codeflow.graph.relations import REL_IMPLEMENTS, REL_IMPORTS, REL_INHERITS
 from md_generator.codeflow.models.ir import (
     BranchPoint,
     CallSite,
@@ -11,6 +12,7 @@ from md_generator.codeflow.models.ir import (
     EntryKind,
     EntryRecord,
     FileParseResult,
+    StructuralEdge,
 )
 
 
@@ -23,6 +25,122 @@ def _rel_key(path: Path, root: Path) -> str:
 
 def _sid(key: str, cls: str, method: str) -> str:
     return f"{key}::{cls}.{method}"
+
+
+def _reference_type_fqn(rt: object) -> str:
+    parts: list[str] = []
+    cur: object | None = rt
+    while cur is not None:
+        parts.append(str(getattr(cur, "name", "") or ""))
+        cur = getattr(cur, "sub_type", None)
+    return ".".join(parts)
+
+
+def _qualify_java_type(simple_or_fqn: str, java_package: str) -> str:
+    s = (simple_or_fqn or "").strip()
+    if not s:
+        return s
+    if "." in s:
+        return s
+    pkg = (java_package or "").strip()
+    return f"{pkg}.{s}" if pkg else s
+
+
+def _emit_compilation_unit_imports(tree: object, key: str, fr: FileParseResult) -> None:
+    fid = f"file:{key}"
+    for imp in getattr(tree, "imports", None) or []:
+        if getattr(imp, "wildcard", False):
+            continue
+        if getattr(imp, "static", False):
+            continue
+        path = getattr(imp, "path", None)
+        if not path or not isinstance(path, str):
+            continue
+        fr.structural_edges.append(
+            StructuralEdge(
+                source_id=fid,
+                target_id=f"external::{path}",
+                relation=REL_IMPORTS,
+                confidence=0.7,
+                line=None,
+            ),
+        )
+
+
+def _emit_type_inheritance(key: str, fq_class: str, decl: object, java_package: str, fr: FileParseResult) -> None:
+    cid = f"class:{key}::{fq_class}"
+    ex = getattr(decl, "extends", None)
+    if ex is not None:
+        raw = _reference_type_fqn(ex)
+        tgt = _qualify_java_type(raw, java_package)
+        if tgt:
+            fr.structural_edges.append(
+                StructuralEdge(
+                    source_id=cid,
+                    target_id=f"external::{tgt}",
+                    relation=REL_INHERITS,
+                    confidence=0.7,
+                    line=None,
+                ),
+            )
+    for impl in getattr(decl, "implements", None) or []:
+        raw = _reference_type_fqn(impl)
+        tgt = _qualify_java_type(raw, java_package)
+        if tgt:
+            fr.structural_edges.append(
+                StructuralEdge(
+                    source_id=cid,
+                    target_id=f"external::{tgt}",
+                    relation=REL_IMPLEMENTS,
+                    confidence=0.7,
+                    line=None,
+                ),
+            )
+
+
+def _parse_type_declaration(
+    decl: object,
+    key: str,
+    fq_class: str,
+    text: str,
+    fr: FileParseResult,
+) -> None:
+    """Walk one class/interface/enum declaration and nested types; emit methods and calls."""
+    import javalang
+    from javalang.tree import ClassDeclaration, MethodDeclaration
+
+    _emit_type_inheritance(key, fq_class, decl, fr.java_package or "", fr)
+
+    for item in getattr(decl, "body", None) or []:
+        if isinstance(item, ClassDeclaration):
+            _parse_type_declaration(item, key, f"{fq_class}.{item.name}", text, fr)
+
+    for m in getattr(decl, "methods", None) or []:
+        if not isinstance(m, MethodDeclaration):
+            continue
+        caller = _sid(key, fq_class, m.name)
+        fr.symbol_ids.append(caller)
+        body = m.body
+        if isinstance(body, javalang.tree.BlockStatement):
+            _walk_block(body.statements or [], text, caller, fr, [])
+        elif isinstance(body, list):
+            _walk_block(body, text, caller, fr, [])
+        elif body is not None:
+            _walk_stmt(body, text, caller, fr, [])
+
+        ann_text = " ".join(str(getattr(a, "name", a)) for a in (getattr(m, "annotations", None) or []))
+        if "KafkaListener" in ann_text or "kafka" in ann_text.lower():
+            pos = getattr(m, "position", None)
+            line = int(getattr(pos, "line", 0) or 0) if pos else 0
+            fr.entries.append(
+                EntryRecord(
+                    symbol_id=caller,
+                    kind=EntryKind.KAFKA,
+                    label="Kafka listener",
+                    file_path=str(fr.path),
+                    line=line,
+                ),
+            )
 
 
 def _is_jtree(x: object) -> bool:
@@ -227,7 +345,6 @@ class JavaParser:
 
     def parse_file(self, path: Path, project_root: Path) -> FileParseResult:
         import javalang
-        from javalang.tree import MethodDeclaration
 
         root = project_root.resolve()
         key = _rel_key(path, root)
@@ -239,35 +356,16 @@ class JavaParser:
         except Exception:
             return fr
 
-        for t in tree.types or []:
-            cls_name = getattr(t, "name", None)
-            if not cls_name:
-                continue
-            for m in getattr(t, "methods", None) or []:
-                if not isinstance(m, MethodDeclaration):
-                    continue
-                caller = _sid(key, cls_name, m.name)
-                fr.symbol_ids.append(caller)
-                body = m.body
-                if isinstance(body, javalang.tree.BlockStatement):
-                    _walk_block(body.statements or [], text, caller, fr, [])
-                elif isinstance(body, list):
-                    _walk_block(body, text, caller, fr, [])
-                elif body is not None:
-                    _walk_stmt(body, text, caller, fr, [])
+        fr.java_package = tree.package.name if tree.package else None
+        _emit_compilation_unit_imports(tree, key, fr)
 
-                ann_text = " ".join(str(getattr(a, "name", a)) for a in (getattr(m, "annotations", None) or []))
-                if "KafkaListener" in ann_text or "kafka" in ann_text.lower():
-                    pos = getattr(m, "position", None)
-                    line = int(getattr(pos, "line", 0) or 0) if pos else 0
-                    fr.entries.append(
-                        EntryRecord(
-                            symbol_id=caller,
-                            kind=EntryKind.KAFKA,
-                            label="Kafka listener",
-                            file_path=str(path.resolve()),
-                            line=line,
-                        ),
-                    )
+        from javalang.tree import ClassDeclaration, EnumDeclaration, InterfaceDeclaration
+
+        for t in tree.types or []:
+            name = getattr(t, "name", None)
+            if not name:
+                continue
+            if isinstance(t, (ClassDeclaration, InterfaceDeclaration, EnumDeclaration)):
+                _parse_type_declaration(t, key, name, text, fr)
 
         return fr

@@ -215,6 +215,7 @@ def write_html_bundle(out: Path, entry_id: str, sl: FlowSlice, graph_json: dict)
     <div id="side">
       <h3>Entry</h3>
       <pre>{html.escape(entry_id)}</pre>
+      <p style="font-size:12px;margin:8px 0;"><a href="entry.md">entry.md</a> · <a href="flow.md">flow.md</a> (if generated)</p>
       <h4>Nodes ({len(sl.nodes)})</h4>
       <pre>{nodes_text}</pre>
       <p style="margin-top:12px;color:#555;font-size:11px;">Flow: breadth-first from entry. Layered: BFS rank positions (NetworkX). Clustered: package/dir compound groups + COSE.</p>
