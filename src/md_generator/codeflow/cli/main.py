@@ -224,6 +224,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max LOOP_HDR revisits per path before forcing exit edges (default: 2)",
     )
     scan.add_argument(
+        "--cfg-probability",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Score enumerated CFG paths with default branch weights (and runtime trace if set)",
+    )
+    scan.add_argument(
+        "--cfg-mermaid-probabilities",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Annotate cfg.mmd edges with static/runtime p= when using --emit-cfg",
+    )
+    scan.add_argument(
+        "--cfg-runtime-trace",
+        type=Path,
+        default=None,
+        help="JSON file with counts {\"u->v\": n} to set CFG edge runtime_prob (optional)",
+    )
+    scan.add_argument(
+        "--cfg-loop-repeat-prob",
+        type=float,
+        default=0.6,
+        help="Default probability for LOOP_HDR repeat edge (exit uses 1 minus this; default: 0.6)",
+    )
+    scan.add_argument(
         "--graph-include-structural",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -408,6 +432,10 @@ def main(argv: list[str] | None = None) -> int:
             cfg_max_paths=int(ns.cfg_max_paths),
             cfg_path_max_depth=int(ns.cfg_path_max_depth),
             cfg_loop_visits=int(ns.cfg_loop_visits),
+            cfg_probability=bool(ns.cfg_probability),
+            cfg_mermaid_probabilities=bool(ns.cfg_mermaid_probabilities),
+            cfg_runtime_trace=Path(ns.cfg_runtime_trace).expanduser().resolve() if ns.cfg_runtime_trace else None,
+            cfg_loop_repeat_prob=float(ns.cfg_loop_repeat_prob),
             graph_include_structural=bool(ns.graph_include_structural),
             include_references=bool(ns.include_references),
             include_events=bool(ns.include_events),

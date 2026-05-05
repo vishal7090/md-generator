@@ -17,7 +17,7 @@ def copy_cfg(cfg: CFG) -> CFG:
             file_path=n.file_path,
             line=n.line,
         )
-    out.edges = [CFGEdge(e.source, e.target, e.label) for e in cfg.edges]
+    out.edges = [CFGEdge(e.source, e.target, e.label, e.runtime_prob) for e in cfg.edges]
     return out
 
 
@@ -37,5 +37,5 @@ def clone_cfg_with_prefix(src: CFG, prefix: str) -> tuple[CFG, dict[str, str]]:
             line=n.line,
         )
     for e in src.edges:
-        out.edges.append(CFGEdge(mapping[e.source], mapping[e.target], e.label))
+        out.edges.append(CFGEdge(mapping[e.source], mapping[e.target], e.label, e.runtime_prob))
     return out, mapping

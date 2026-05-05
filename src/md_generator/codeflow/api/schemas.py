@@ -45,6 +45,10 @@ class AnalyzeOptions(BaseModel):
     cfg_max_paths: int | None = None
     cfg_path_max_depth: int | None = None
     cfg_loop_visits: int | None = None
+    cfg_probability: bool | None = None
+    cfg_mermaid_probabilities: bool | None = None
+    cfg_runtime_trace: str | None = None
+    cfg_loop_repeat_prob: float | None = None
     graph_include_structural: bool | None = None
     intelligence_transitive_callers: bool | None = None
     emit_system_graph_stats: bool | None = None
@@ -98,6 +102,16 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     cmpaths = 100 if not raw or raw.cfg_max_paths is None else int(raw.cfg_max_paths)
     cpmd = 1000 if not raw or raw.cfg_path_max_depth is None else int(raw.cfg_path_max_depth)
     clv = 2 if not raw or raw.cfg_loop_visits is None else int(raw.cfg_loop_visits)
+    cprob = False if not raw or raw.cfg_probability is None else bool(raw.cfg_probability)
+    cmmdp = False if not raw or raw.cfg_mermaid_probabilities is None else bool(raw.cfg_mermaid_probabilities)
+    crt = None
+    if raw and raw.cfg_runtime_trace and str(raw.cfg_runtime_trace).strip():
+        crt = Path(str(raw.cfg_runtime_trace).strip())
+        if not crt.is_absolute():
+            crt = (workspace_src / crt).resolve()
+        else:
+            crt = crt.resolve()
+    clrp = 0.6 if not raw or raw.cfg_loop_repeat_prob is None else float(raw.cfg_loop_repeat_prob)
     gis = False if not raw or raw.graph_include_structural is None else bool(raw.graph_include_structural)
     itc = False if not raw or raw.intelligence_transitive_callers is None else bool(raw.intelligence_transitive_callers)
     esgs = False if not raw or raw.emit_system_graph_stats is None else bool(raw.emit_system_graph_stats)
@@ -140,6 +154,10 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         cfg_max_paths=cmpaths,
         cfg_path_max_depth=cpmd,
         cfg_loop_visits=clv,
+        cfg_probability=cprob,
+        cfg_mermaid_probabilities=cmmdp,
+        cfg_runtime_trace=crt,
+        cfg_loop_repeat_prob=clrp,
         graph_include_structural=gis,
         include_references=iref,
         include_events=ievt,
@@ -198,6 +216,10 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "cfg_max_paths": cfg.cfg_max_paths,
         "cfg_path_max_depth": cfg.cfg_path_max_depth,
         "cfg_loop_visits": cfg.cfg_loop_visits,
+        "cfg_probability": cfg.cfg_probability,
+        "cfg_mermaid_probabilities": cfg.cfg_mermaid_probabilities,
+        "cfg_runtime_trace": str(cfg.cfg_runtime_trace) if cfg.cfg_runtime_trace else None,
+        "cfg_loop_repeat_prob": cfg.cfg_loop_repeat_prob,
         "graph_include_structural": cfg.graph_include_structural,
         "intelligence_transitive_callers": cfg.intelligence_transitive_callers,
         "emit_system_graph_stats": cfg.emit_system_graph_stats,
@@ -250,6 +272,10 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         cfg_max_paths=int(data.get("cfg_max_paths", 100)),
         cfg_path_max_depth=int(data.get("cfg_path_max_depth", 1000)),
         cfg_loop_visits=int(data.get("cfg_loop_visits", 2)),
+        cfg_probability=bool(data.get("cfg_probability", False)),
+        cfg_mermaid_probabilities=bool(data.get("cfg_mermaid_probabilities", False)),
+        cfg_runtime_trace=Path(data["cfg_runtime_trace"]) if data.get("cfg_runtime_trace") else None,
+        cfg_loop_repeat_prob=float(data.get("cfg_loop_repeat_prob", 0.6)),
         graph_include_structural=bool(data.get("graph_include_structural", False)),
         intelligence_transitive_callers=bool(data.get("intelligence_transitive_callers", False)),
         emit_system_graph_stats=bool(data.get("emit_system_graph_stats", False)),

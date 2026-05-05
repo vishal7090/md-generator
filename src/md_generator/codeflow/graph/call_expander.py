@@ -113,12 +113,12 @@ def _try_inline_call(
     for nid, node in clone.nodes.items():
         work.nodes[nid] = node
     for e in clone.edges:
-        work.edges.append(CFGEdge(e.source, e.target, e.label))
+        work.edges.append(CFGEdge(e.source, e.target, e.label, e.runtime_prob))
 
     for e in preds:
-        work.edges.append(CFGEdge(e.source, new_start, e.label))
+        work.edges.append(CFGEdge(e.source, new_start, e.label, e.runtime_prob))
     for e in succs:
-        work.edges.append(CFGEdge(new_end, e.target, e.label))
+        work.edges.append(CFGEdge(new_end, e.target, e.label, e.runtime_prob))
 
     new_stack = stack + [callee_sid]
     for nid in clone_ids:

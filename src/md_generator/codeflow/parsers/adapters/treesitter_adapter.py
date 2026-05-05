@@ -138,16 +138,17 @@ def _ts_stmt(node: Node, source: bytes) -> IRStmt | None:
                     label="call",
                     line=node.start_point[0] + 1,
                 )
+    if t == "break_statement":
+        return IRStmt(kind="BREAK", line=node.start_point[0] + 1)
+    if t == "continue_statement":
+        return IRStmt(kind="CONTINUE", line=node.start_point[0] + 1)
     if t == "return_statement":
-        for ch in node.named_children:
-            if ch.type == "call_expression":
-                return IRStmt(
-                    kind="CALL",
-                    target=_call_name(ch, source),
-                    label="return",
-                    line=node.start_point[0] + 1,
-                )
-        return IRStmt(kind="RETURN", label="return", line=node.start_point[0] + 1)
+        inner = _trim(_text(source, node))
+        return IRStmt(
+            kind="RETURN",
+            label=inner if inner else "return",
+            line=node.start_point[0] + 1,
+        )
     return IRStmt(kind="STATEMENT", label=t, line=node.start_point[0] + 1)
 
 

@@ -20,6 +20,7 @@ class CFGEdge:
     source: str
     target: str
     label: str | None = None
+    runtime_prob: float | None = None
 
 
 @dataclass(slots=True)
@@ -44,5 +45,5 @@ class CFG:
         )
         return nid
 
-    def add_edge(self, source: str, target: str, label: str | None = None) -> None:
-        self.edges.append(CFGEdge(source=source, target=target, label=label))
+    def add_edge(self, source: str, target: str, label: str | None = None, *, runtime_prob: float | None = None) -> None:
+        self.edges.append(CFGEdge(source=source, target=target, label=label, runtime_prob=runtime_prob))

@@ -6,6 +6,7 @@ import re
 
 from md_generator.codeflow.graph.cfg_builder import cfg_to_serializable
 from md_generator.codeflow.graph.cfg_model import CFG
+from md_generator.codeflow.graph.path_probability import PathProbConfig, edge_static_prob
 
 
 def _mermaid_escape(s: str) -> str:
@@ -30,7 +31,13 @@ def build_mermaid_id_map(cfg: CFG) -> dict[str, str]:
     return id_map
 
 
-def cfg_to_mermaid(cfg: CFG) -> str:
+def cfg_to_mermaid(
+    cfg: CFG,
+    *,
+    show_edge_probability: bool = False,
+    prob_config: PathProbConfig | None = None,
+) -> str:
+    pc = prob_config or PathProbConfig()
     lines = ["flowchart TD"]
     id_map = build_mermaid_id_map(cfg)
     for n in cfg.nodes.values():
@@ -40,7 +47,15 @@ def cfg_to_mermaid(cfg: CFG) -> str:
     for e in cfg.edges:
         a = id_map.get(e.source, "missing_src")
         b = id_map.get(e.target, "missing_dst")
-        lab = _mermaid_escape(e.label or "") if e.label else ""
+        base = _mermaid_escape(e.label or "") if e.label else ""
+        if show_edge_probability:
+            p = edge_static_prob(cfg, e, pc)
+            if base:
+                lab = f"{base} (p={p:.2f})"
+            else:
+                lab = f"p={p:.2f}"
+        else:
+            lab = base
         if lab:
             lines.append(f"  {a} -->|{lab}| {b}")
         else:
@@ -48,21 +63,50 @@ def cfg_to_mermaid(cfg: CFG) -> str:
     return "\n".join(lines) + "\n"
 
 
-def cfg_to_markdown_section(cfg: CFG, *, title: str = "## Control-flow graph (IR)") -> str:
-    lines = [title, "", "```mermaid", cfg_to_mermaid(cfg).rstrip(), "```", ""]
+def cfg_to_markdown_section(
+    cfg: CFG,
+    *,
+    title: str = "## Control-flow graph (IR)",
+    mermaid_show_probability: bool = False,
+    prob_config: PathProbConfig | None = None,
+) -> str:
+    lines = [
+        title,
+        "",
+        "```mermaid",
+        cfg_to_mermaid(cfg, show_edge_probability=mermaid_show_probability, prob_config=prob_config).rstrip(),
+        "```",
+        "",
+    ]
     return "\n".join(lines)
 
 
-def write_cfg_sidecar(out_dir, cfg: CFG) -> None:
+def write_cfg_sidecar(
+    out_dir,
+    cfg: CFG,
+    *,
+    mermaid_show_probability: bool = False,
+    prob_config: PathProbConfig | None = None,
+) -> None:
     import json
     from pathlib import Path
 
     p = Path(out_dir)
     (p / "cfg.json").write_text(json.dumps(cfg_to_serializable(cfg), indent=2), encoding="utf-8")
-    (p / "cfg.mmd").write_text(cfg_to_mermaid(cfg), encoding="utf-8")
+    (p / "cfg.mmd").write_text(
+        cfg_to_mermaid(cfg, show_edge_probability=mermaid_show_probability, prob_config=prob_config),
+        encoding="utf-8",
+    )
 
 
-def write_cfg_paths_sidecars(out_dir, cfg: CFG, paths: list[list[str]], *, truncated: bool = False) -> None:
+def write_cfg_paths_sidecars(
+    out_dir,
+    cfg: CFG,
+    paths: list[list[str]],
+    *,
+    truncated: bool = False,
+    path_probabilities: list[float] | None = None,
+) -> None:
     from pathlib import Path
 
     from md_generator.codeflow.generators.cfg_paths_markdown import paths_to_markdown
@@ -70,5 +114,8 @@ def write_cfg_paths_sidecars(out_dir, cfg: CFG, paths: list[list[str]], *, trunc
 
     p = Path(out_dir)
     lookup = cfg.nodes
-    (p / "cfg-paths.md").write_text(paths_to_markdown(cfg, paths, lookup, truncated=truncated), encoding="utf-8")
+    (p / "cfg-paths.md").write_text(
+        paths_to_markdown(cfg, paths, lookup, truncated=truncated, path_probabilities=path_probabilities),
+        encoding="utf-8",
+    )
     (p / "cfg-paths.mmd").write_text(paths_to_mermaid(cfg, paths), encoding="utf-8")

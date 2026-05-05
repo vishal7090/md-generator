@@ -12,6 +12,8 @@ IRStmtKind = Literal[
     "TRY",
     "CALL",
     "RETURN",
+    "BREAK",
+    "CONTINUE",
     "STATEMENT",
 ]
 

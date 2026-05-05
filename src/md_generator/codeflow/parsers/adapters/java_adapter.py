@@ -129,16 +129,16 @@ def _java_stmt(node: object) -> IRStmt | None:
                     label="var",
                     line=_line(node),
                 )
+    if isinstance(node, javalang.tree.BreakStatement):
+        return IRStmt(kind="BREAK", line=_line(node))
+    if isinstance(node, javalang.tree.ContinueStatement):
+        return IRStmt(kind="CONTINUE", line=_line(node))
     if isinstance(node, javalang.tree.ReturnStatement):
         expr = getattr(node, "value", None)
-        if isinstance(expr, javalang.tree.MethodInvocation):
-            return IRStmt(
-                kind="CALL",
-                target=str(getattr(expr, "member", "") or ""),
-                label="return",
-                line=_line(node),
-            )
-        return IRStmt(kind="RETURN", label="return", line=_line(node))
+        lab = "return"
+        if expr is not None:
+            lab = str(expr)[:200]
+        return IRStmt(kind="RETURN", label=lab, line=_line(node))
     if isinstance(node, javalang.tree.BlockStatement):
         inner = _stmt_list(list(node.statements or []))
         if not inner:

@@ -51,6 +51,11 @@ class ScanConfig:
     cfg_max_paths: int = 100
     cfg_path_max_depth: int = 1000
     cfg_loop_visits: int = 2
+    # CFG path scoring (static defaults; optional runtime trace).
+    cfg_probability: bool = False
+    cfg_mermaid_probabilities: bool = False
+    cfg_runtime_trace: Path | None = None
+    cfg_loop_repeat_prob: float = 0.6
     # Merge parser structural edges (IMPORTS / INHERITS / …) into the graph (Java first).
     graph_include_structural: bool = False
     # Emit REFERENCES edges from parsers (Python/Java/TS heuristics).

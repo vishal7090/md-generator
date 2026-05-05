@@ -199,6 +199,10 @@ def _write_scan_summary(
         f"- **cfg_max_paths:** {cfg.cfg_max_paths}",
         f"- **cfg_path_max_depth:** {cfg.cfg_path_max_depth}",
         f"- **cfg_loop_visits:** {cfg.cfg_loop_visits}",
+        f"- **cfg_probability:** {cfg.cfg_probability}",
+        f"- **cfg_mermaid_probabilities:** {cfg.cfg_mermaid_probabilities}",
+        f"- **cfg_runtime_trace:** {str(cfg.cfg_runtime_trace) if cfg.cfg_runtime_trace else 'None'}",
+        f"- **cfg_loop_repeat_prob:** {cfg.cfg_loop_repeat_prob}",
         f"- **graph_include_structural:** {cfg.graph_include_structural}",
         f"- **intelligence_transitive_callers:** {cfg.intelligence_transitive_callers}",
         f"- **emit_system_graph_stats:** {cfg.emit_system_graph_stats}",
@@ -405,6 +409,8 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 from md_generator.codeflow.graph.call_expander import expand_cfg_calls
                 from md_generator.codeflow.graph.cfg_builder import build_cfg_from_ir
                 from md_generator.codeflow.graph.path_enumerator import PathResult, enumerate_paths, find_cfg_end_id, find_cfg_start_id
+                from md_generator.codeflow.graph.path_probability import PathProbConfig, score_paths
+                from md_generator.codeflow.graph.runtime_integration import apply_runtime_weights
                 from md_generator.codeflow.generators.cfg_paths_markdown import paths_to_markdown
                 from md_generator.codeflow.generators.cfg_render import cfg_to_markdown_section, write_cfg_paths_sidecars, write_cfg_sidecar
 
@@ -415,7 +421,20 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     max_call_depth=cfg.cfg_call_depth,
                     inline_calls=cfg.cfg_inline_calls,
                 )
-                write_cfg_sidecar(sub, c)
+                if cfg.cfg_runtime_trace and cfg.cfg_runtime_trace.is_file():
+                    try:
+                        trace_obj = json.loads(cfg.cfg_runtime_trace.read_text(encoding="utf-8"))
+                        if isinstance(trace_obj, dict):
+                            apply_runtime_weights(c, trace_obj)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                prob_conf = PathProbConfig(loop_repeat=max(0.01, min(0.99, float(cfg.cfg_loop_repeat_prob))))
+                write_cfg_sidecar(
+                    sub,
+                    c,
+                    mermaid_show_probability=cfg.cfg_mermaid_probabilities,
+                    prob_config=prob_conf,
+                )
                 sid = find_cfg_start_id(c)
                 eid_end = find_cfg_end_id(c)
                 path_res = (
@@ -430,11 +449,32 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     if sid and eid_end
                     else PathResult()
                 )
-                write_cfg_paths_sidecars(sub, c, path_res.paths, truncated=path_res.truncated)
+                path_probs: list[float] | None = None
+                if cfg.cfg_probability and path_res.paths:
+                    path_probs = [pr for _p, pr in score_paths(c, path_res.paths, prob_conf)]
+                write_cfg_paths_sidecars(
+                    sub,
+                    c,
+                    path_res.paths,
+                    truncated=path_res.truncated,
+                    path_probabilities=path_probs,
+                )
                 if "md" in fmts:
                     flow_path = sub / "flow.md"
-                    extra = cfg_to_markdown_section(c) + "\n" + paths_to_markdown(
-                        c, path_res.paths, c.nodes, truncated=path_res.truncated
+                    extra = (
+                        cfg_to_markdown_section(
+                            c,
+                            mermaid_show_probability=cfg.cfg_mermaid_probabilities,
+                            prob_config=prob_conf,
+                        )
+                        + "\n"
+                        + paths_to_markdown(
+                            c,
+                            path_res.paths,
+                            c.nodes,
+                            truncated=path_res.truncated,
+                            path_probabilities=path_probs,
+                        )
                     )
                     flow_path.write_text(flow_path.read_text(encoding="utf-8") + "\n" + extra, encoding="utf-8")
         if "mermaid" in fmts:
@@ -552,6 +592,10 @@ def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> byt
             cfg_max_paths=cfg.cfg_max_paths,
             cfg_path_max_depth=cfg.cfg_path_max_depth,
             cfg_loop_visits=cfg.cfg_loop_visits,
+            cfg_probability=cfg.cfg_probability,
+            cfg_mermaid_probabilities=cfg.cfg_mermaid_probabilities,
+            cfg_runtime_trace=cfg.cfg_runtime_trace,
+            cfg_loop_repeat_prob=cfg.cfg_loop_repeat_prob,
             graph_include_structural=cfg.graph_include_structural,
             include_references=cfg.include_references,
             include_events=cfg.include_events,

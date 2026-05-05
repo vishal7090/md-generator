@@ -99,14 +99,11 @@ def normalize_stmt(node: ast.stmt) -> IRStmt | None:
             label=_unparse(node),
             line=getattr(node, "lineno", None),
         )
+    if isinstance(node, ast.Break):
+        return IRStmt(kind="BREAK", line=getattr(node, "lineno", None))
+    if isinstance(node, ast.Continue):
+        return IRStmt(kind="CONTINUE", line=getattr(node, "lineno", None))
     if isinstance(node, ast.Return):
-        if node.value and isinstance(node.value, ast.Call):
-            return IRStmt(
-                kind="CALL",
-                target=_call_target(node.value),
-                label="return",
-                line=getattr(node, "lineno", None),
-            )
         return IRStmt(
             kind="RETURN",
             label=_unparse(node.value) if node.value else "return",
