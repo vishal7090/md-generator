@@ -119,6 +119,8 @@ class FileParseResult:
     rules: list[BusinessRule] = field(default_factory=list)
     # Normalized IR methods (optional CFG path); elements are ``IRMethod`` from ``models.ir_cfg``.
     ir_methods: list[object] = field(default_factory=list)
+    # Raw JSON from language bridges (e.g. codeflow_go_dump / codeflow_php_dump) for IR adapters; optional.
+    ir_dump: dict[str, object] | None = None
     # Structural edges (IMPORTS / INHERITS / …); merged in ``build_graph`` when enabled.
     structural_edges: list[StructuralEdge] = field(default_factory=list)
     # Java compilation unit package (``a.b.c``), for FQN resolution; other languages ignore.

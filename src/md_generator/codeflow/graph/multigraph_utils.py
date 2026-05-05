@@ -59,10 +59,16 @@ def iter_out_edges(g: nx.Graph, n: Any) -> Iterator[tuple[Any, Any, Any, dict[st
 
 def call_collapsed_digraph(g: nx.Graph) -> nx.DiGraph:
     """Single CALLS hop per (u,v) for shortest-path layering / flow slice."""
+    return collapsed_digraph_for_relations(g, frozenset({rel.REL_CALLS}))
+
+
+def collapsed_digraph_for_relations(g: nx.Graph, relations: frozenset[str]) -> nx.DiGraph:
+    """One arc per (u,v) when any edge has ``relation`` in ``relations`` (for flow slice / reachability)."""
     cg = nx.DiGraph()
     cg.add_nodes_from(g.nodes(data=True))
     for u, v, _k, d in iter_multi_edges(g):
-        if d.get("relation", rel.REL_CALLS) != rel.REL_CALLS:
+        r = d.get("relation") or d.get("kind") or rel.REL_CALLS
+        if r not in relations:
             continue
         cg.add_edge(u, v)
     return cg

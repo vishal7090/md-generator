@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-
 @dataclass
 class ScanConfig:
     """Input and output options for a codeflow scan."""
@@ -76,8 +75,27 @@ class ScanConfig:
     emit_graph_communities: bool = False
     # Write entry.llm.md beside entry.md (LLM-oriented pointers, no duplicate full text).
     emit_llm_entry_sidecar: bool = False
+    # When ``emit_cfg`` is on, build IR for these languages (skip heavy repos by turning one off).
+    cfg_ir_go: bool = True
+    cfg_ir_php: bool = True
+    cfg_ir_cpp: bool = True
+    # Include EVENT (and optionally REFERENCES) edges in flow slice / flow.mmd (not only CALLS).
+    flow_include_event_edges: bool = False
+    flow_include_reference_edges: bool = False
+    # Markdown: add Event impact section (CALLS ∪ EVENT reachability).
+    event_impact: bool = False
 
     def parsed_include(self) -> set[str] | None:
         if not self.include or not str(self.include).strip():
             return None
         return {x.strip() for x in str(self.include).split(",") if x.strip()}
+
+    def flow_slice_relations(self) -> frozenset[str]:
+        from md_generator.codeflow.graph import relations as rel
+
+        r = {rel.REL_CALLS}
+        if self.flow_include_event_edges:
+            r.add(rel.REL_EVENT)
+        if self.flow_include_reference_edges:
+            r.add(rel.REL_REFERENCES)
+        return frozenset(r)

@@ -10,6 +10,9 @@ from md_generator.codeflow.parsers.adapters import (
     populate_ir_methods_java,
     populate_ir_methods_python,
 )
+from md_generator.codeflow.parsers.adapters.cpp_adapter import populate_ir_methods_cpp
+from md_generator.codeflow.parsers.adapters.go_adapter import populate_ir_methods_go
+from md_generator.codeflow.parsers.adapters.php_adapter import populate_ir_methods_php
 
 
 def enrich_parse_results_with_ir(results: list[FileParseResult], cfg: ScanConfig, project_root: Path) -> None:
@@ -28,5 +31,11 @@ def enrich_parse_results_with_ir(results: list[FileParseResult], cfg: ScanConfig
                 populate_ir_methods_treesitter(fr, root)
             except ImportError:
                 fr.ir_methods = []
+        elif fr.language == "go" and cfg.cfg_ir_go:
+            populate_ir_methods_go(fr)
+        elif fr.language == "php" and cfg.cfg_ir_php:
+            populate_ir_methods_php(fr)
+        elif fr.language == "cpp" and cfg.cfg_ir_cpp:
+            populate_ir_methods_cpp(fr, root)
         else:
             fr.ir_methods = []

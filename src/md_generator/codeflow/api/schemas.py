@@ -57,6 +57,12 @@ class AnalyzeOptions(BaseModel):
     emit_llm_entry_sidecar: bool | None = None
     include_references: bool | None = None
     include_events: bool | None = None
+    cfg_ir_go: bool | None = None
+    cfg_ir_php: bool | None = None
+    cfg_ir_cpp: bool | None = None
+    flow_include_event_edges: bool | None = None
+    flow_include_reference_edges: bool | None = None
+    event_impact: bool | None = None
     cluster_mode: Literal["file_imports", "structural", "semantic", "hybrid"] | None = None
     graph_query: str | None = None
 
@@ -120,6 +126,12 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     ellm = False if not raw or raw.emit_llm_entry_sidecar is None else bool(raw.emit_llm_entry_sidecar)
     iref = False if not raw or raw.include_references is None else bool(raw.include_references)
     ievt = False if not raw or raw.include_events is None else bool(raw.include_events)
+    cgo = True if not raw or raw.cfg_ir_go is None else bool(raw.cfg_ir_go)
+    cphp = True if not raw or raw.cfg_ir_php is None else bool(raw.cfg_ir_php)
+    ccpp = True if not raw or raw.cfg_ir_cpp is None else bool(raw.cfg_ir_cpp)
+    fie = False if not raw or raw.flow_include_event_edges is None else bool(raw.flow_include_event_edges)
+    fir = False if not raw or raw.flow_include_reference_edges is None else bool(raw.flow_include_reference_edges)
+    eimp = False if not raw or raw.event_impact is None else bool(raw.event_impact)
     cm = "file_imports" if not raw or raw.cluster_mode is None else raw.cluster_mode
     gq = None if not raw or raw.graph_query is None or not str(raw.graph_query).strip() else str(raw.graph_query).strip()
     return ScanConfig(
@@ -161,6 +173,12 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         graph_include_structural=gis,
         include_references=iref,
         include_events=ievt,
+        cfg_ir_go=cgo,
+        cfg_ir_php=cphp,
+        cfg_ir_cpp=ccpp,
+        flow_include_event_edges=fie,
+        flow_include_reference_edges=fir,
+        event_impact=eimp,
         cluster_mode=cm,  # type: ignore[arg-type]
         graph_query=gq,
         intelligence_transitive_callers=itc,
@@ -228,6 +246,12 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "emit_llm_entry_sidecar": cfg.emit_llm_entry_sidecar,
         "include_references": cfg.include_references,
         "include_events": cfg.include_events,
+        "cfg_ir_go": cfg.cfg_ir_go,
+        "cfg_ir_php": cfg.cfg_ir_php,
+        "cfg_ir_cpp": cfg.cfg_ir_cpp,
+        "flow_include_event_edges": cfg.flow_include_event_edges,
+        "flow_include_reference_edges": cfg.flow_include_reference_edges,
+        "event_impact": cfg.event_impact,
         "cluster_mode": cfg.cluster_mode,
         "graph_query": cfg.graph_query,
     }
@@ -284,6 +308,12 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         emit_llm_entry_sidecar=bool(data.get("emit_llm_entry_sidecar", False)),
         include_references=bool(data.get("include_references", False)),
         include_events=bool(data.get("include_events", False)),
+        cfg_ir_go=bool(data.get("cfg_ir_go", True)),
+        cfg_ir_php=bool(data.get("cfg_ir_php", True)),
+        cfg_ir_cpp=bool(data.get("cfg_ir_cpp", True)),
+        flow_include_event_edges=bool(data.get("flow_include_event_edges", False)),
+        flow_include_reference_edges=bool(data.get("flow_include_reference_edges", False)),
+        event_impact=bool(data.get("event_impact", False)),
         cluster_mode=data.get("cluster_mode", "file_imports"),  # type: ignore[arg-type]
         graph_query=data.get("graph_query"),
     )

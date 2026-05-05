@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import networkx as nx
 
 from md_generator.codeflow.graph import relations as rel
-from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, call_collapsed_digraph
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, collapsed_digraph_for_relations
 
 
 @dataclass(slots=True)
@@ -18,15 +18,21 @@ class FlowSlice:
     truncated: bool = False
 
 
+_DEFAULT_FLOW_RELATIONS = frozenset({rel.REL_CALLS})
+
+
 def walk_with_depth(
     g: CodeflowGraph,
     start: str,
     max_depth: int,
+    *,
+    relations: frozenset[str] | None = None,
 ) -> tuple[set[str], list[tuple[str, str, dict]], set[str], bool]:
-    """Reachability from start within ``max_depth`` hops over **CALLS** edges only."""
+    """Reachability from ``start`` within ``max_depth`` hops over selected relations (default: CALLS only)."""
     if start not in g:
         return {start}, [], set(), False
-    cg = call_collapsed_digraph(g)
+    rels = relations if relations is not None else _DEFAULT_FLOW_RELATIONS
+    cg = collapsed_digraph_for_relations(g, rels)
     if start not in cg:
         return {start}, [], set(), False
     try:
@@ -50,7 +56,8 @@ def walk_with_depth(
             if not g.has_edge(u, v):
                 continue
             for _k, ed in g[u][v].items():
-                if ed.get("relation") != rel.REL_CALLS:
+                er = ed.get("relation") or ed.get("kind") or rel.REL_CALLS
+                if er not in rels:
                     continue
                 edges_out.append((u, v, dict(ed)))
             dv = plen.get(v)
@@ -66,8 +73,10 @@ def slice_from_entry(
     g: CodeflowGraph,
     entry_id: str,
     max_depth: int,
+    *,
+    relations: frozenset[str] | None = None,
 ) -> FlowSlice:
-    nodes, edges, cycles, truncated = walk_with_depth(g, entry_id, max_depth)
+    nodes, edges, cycles, truncated = walk_with_depth(g, entry_id, max_depth, relations=relations)
     return FlowSlice(
         entry_id=entry_id,
         nodes=nodes,

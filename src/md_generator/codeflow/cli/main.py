@@ -248,6 +248,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Default probability for LOOP_HDR repeat edge (exit uses 1 minus this; default: 0.6)",
     )
     scan.add_argument(
+        "--cfg-ir-go",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When using --emit-cfg, populate IR for Go from codeflow_go_dump (default: on)",
+    )
+    scan.add_argument(
+        "--cfg-ir-php",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When using --emit-cfg, populate IR for PHP from codeflow_php_dump (default: on)",
+    )
+    scan.add_argument(
+        "--cfg-ir-cpp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When using --emit-cfg, populate IR for C/C++ via tree-sitter-cpp (default: on)",
+    )
+    scan.add_argument(
+        "--flow-include-event-edges",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Include EVENT edges in flow slice and flow.mmd (pair with --include-events; default: off)",
+    )
+    scan.add_argument(
+        "--flow-include-reference-edges",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Include REFERENCES edges in flow slice and flow.mmd (default: off)",
+    )
+    scan.add_argument(
+        "--event-impact",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add Event impact section (CALLS ∪ EVENT downstream) in entry.md (default: off)",
+    )
+    scan.add_argument(
         "--graph-include-structural",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -287,7 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-events",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Add Kafka topic nodes and EVENT edges for Java @KafkaListener entries",
+        help="Add Kafka topic nodes and EVENT edges (listeners + heuristic producers) for Java",
     )
     scan.add_argument(
         "--cluster-mode",
@@ -436,6 +472,12 @@ def main(argv: list[str] | None = None) -> int:
             cfg_mermaid_probabilities=bool(ns.cfg_mermaid_probabilities),
             cfg_runtime_trace=Path(ns.cfg_runtime_trace).expanduser().resolve() if ns.cfg_runtime_trace else None,
             cfg_loop_repeat_prob=float(ns.cfg_loop_repeat_prob),
+            cfg_ir_go=bool(ns.cfg_ir_go),
+            cfg_ir_php=bool(ns.cfg_ir_php),
+            cfg_ir_cpp=bool(ns.cfg_ir_cpp),
+            flow_include_event_edges=bool(ns.flow_include_event_edges),
+            flow_include_reference_edges=bool(ns.flow_include_reference_edges),
+            event_impact=bool(ns.event_impact),
             graph_include_structural=bool(ns.graph_include_structural),
             include_references=bool(ns.include_references),
             include_events=bool(ns.include_events),

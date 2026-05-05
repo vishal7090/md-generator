@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -101,58 +101,7 @@ class CodeflowJobManager:
             zf.extractall(src)
 
         out = ws / "out"
-        cfg = ScanConfig(
-            project_root=src,
-            output_path=out,
-            formats=cfg_template.formats,
-            depth=cfg_template.depth,
-            languages=cfg_template.languages,
-            entry=cfg_template.entry,
-            include=cfg_template.include,
-            exclude=cfg_template.exclude,
-            include_internal=cfg_template.include_internal,
-            async_mode=cfg_template.async_mode,
-            jobs=True,
-            runtime=cfg_template.runtime,
-            paths_override=cfg_template.paths_override,
-            business_rules=cfg_template.business_rules,
-            business_rules_sql=cfg_template.business_rules_sql,
-            business_rules_combined=cfg_template.business_rules_combined,
-            entry_fallback=cfg_template.entry_fallback,
-            entry_fallback_max=cfg_template.entry_fallback_max,
-            emit_entry_per_method=cfg_template.emit_entry_per_method,
-            emit_entry_max=cfg_template.emit_entry_max,
-            emit_entry_filter=cfg_template.emit_entry_filter,
-            entries_file=cfg_template.entries_file,
-            write_scan_summary=cfg_template.write_scan_summary,
-            liferay_portlet_base_classes=cfg_template.liferay_portlet_base_classes,
-            codeflow_config_path=cfg_template.codeflow_config_path,
-            emit_flow_tree_json=cfg_template.emit_flow_tree_json,
-            verbose=cfg_template.verbose,
-            emit_graph_schema=cfg_template.emit_graph_schema,
-            intelligence_list_cap=cfg_template.intelligence_list_cap,
-            emit_cfg=cfg_template.emit_cfg,
-            cfg_max_nodes=cfg_template.cfg_max_nodes,
-            cfg_inline_calls=cfg_template.cfg_inline_calls,
-            cfg_call_depth=cfg_template.cfg_call_depth,
-            cfg_max_paths=cfg_template.cfg_max_paths,
-            cfg_path_max_depth=cfg_template.cfg_path_max_depth,
-            cfg_loop_visits=cfg_template.cfg_loop_visits,
-            cfg_probability=cfg_template.cfg_probability,
-            cfg_mermaid_probabilities=cfg_template.cfg_mermaid_probabilities,
-            cfg_runtime_trace=cfg_template.cfg_runtime_trace,
-            cfg_loop_repeat_prob=cfg_template.cfg_loop_repeat_prob,
-            graph_include_structural=cfg_template.graph_include_structural,
-            include_references=cfg_template.include_references,
-            include_events=cfg_template.include_events,
-            cluster_mode=cfg_template.cluster_mode,
-            graph_query=cfg_template.graph_query,
-            intelligence_transitive_callers=cfg_template.intelligence_transitive_callers,
-            emit_system_graph_stats=cfg_template.emit_system_graph_stats,
-            emit_graph_sqlite=cfg_template.emit_graph_sqlite,
-            emit_graph_communities=cfg_template.emit_graph_communities,
-            emit_llm_entry_sidecar=cfg_template.emit_llm_entry_sidecar,
-        )
+        cfg = replace(cfg_template, project_root=src, output_path=out, jobs=True)
         now = time.time()
         cfg_dump = json.dumps(scan_config_dump(cfg), sort_keys=True)
         assert self._conn is not None

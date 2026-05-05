@@ -8,7 +8,7 @@ from pathlib import Path
 import networkx as nx
 
 from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
-from md_generator.codeflow.graph.analysis import event_flow_edges, references_from
+from md_generator.codeflow.graph.analysis import event_flow_edges, event_impact, references_from
 from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, iter_multi_edges, iter_out_edges
 from md_generator.codeflow.generators.flow_summary import format_flow_description, format_method_summary_lines
 from md_generator.codeflow.graph import relations as graph_rel
@@ -23,6 +23,40 @@ from md_generator.codeflow.models.ir import BusinessRule, EntryKind, EntryRecord
 
 def _md_escape(s: str) -> str:
     return s.replace("|", "\\|")
+
+
+def _event_chain_lines(g: CodeflowGraph, entry_id: str, cap: int) -> list[str]:
+    """Producer → topic → consumer bullets involving ``entry_id``."""
+    producers: dict[str, list[str]] = {}
+    consumers: dict[str, list[str]] = {}
+    for u, v, _k, d in iter_multi_edges(g):
+        if d.get("relation") != graph_rel.REL_EVENT:
+            continue
+        role = d.get("event_role")
+        su, sv = str(u), str(v)
+        if role == "consumer" and su.startswith("topic:"):
+            consumers.setdefault(su, []).append(sv)
+        elif role == "producer" and sv.startswith("topic:"):
+            producers.setdefault(sv, []).append(su)
+    out: list[str] = []
+    for topic in sorted(set(producers) | set(consumers)):
+        ps = sorted(set(producers.get(topic, [])))
+        cs = sorted(set(consumers.get(topic, [])))
+        if entry_id not in ps and entry_id not in cs:
+            continue
+        if ps and cs:
+            for p in ps:
+                for c in cs:
+                    out.append(f"- `{_md_escape(p)}` → `{_md_escape(topic)}` → `{_md_escape(c)}`")
+                    if len(out) >= cap:
+                        return out
+        elif entry_id in ps:
+            out.append(f"- `{_md_escape(entry_id)}` → `{_md_escape(topic)}` *(producer)*")
+        elif entry_id in cs:
+            out.append(f"- `{_md_escape(topic)}` → `{_md_escape(entry_id)}` *(consumer)*")
+        if len(out) >= cap:
+            break
+    return out[:cap]
 
 
 def type_label_for_kind(kind: str | None) -> str:
@@ -249,6 +283,7 @@ def write_entry_markdown(
     intelligence_transitive_callers: bool = False,
     include_references: bool = False,
     include_events: bool = False,
+    event_impact_section: bool = False,
     cluster_by_file: dict[str, int] | None = None,
 ) -> None:
     lines: list[str] = []
@@ -354,17 +389,41 @@ def write_entry_markdown(
     if include_events:
         lines.append("## Event flow (graph)")
         lines.append("")
+        chains = _event_chain_lines(g, entry_id, intelligence_cap)
+        if chains:
+            lines.append("*Producer → topic → consumer chains involving this entry:*")
+            lines.append("")
+            lines.extend(chains)
+            lines.append("")
         ev_lines: list[str] = []
         for u, v, _d in event_flow_edges(g):
             su, sv = str(u), str(v)
             if entry_id == su or entry_id == sv:
                 ev_lines.append(f"- `{su}` → `{sv}`")
         if ev_lines:
+            if chains:
+                lines.append("*Raw EVENT edges (this entry):*")
+                lines.append("")
             lines.extend(ev_lines[:intelligence_cap])
             if len(ev_lines) >= intelligence_cap:
                 lines.append(f"- *…truncated at {intelligence_cap} items.*")
+        elif not chains:
+            lines.append("*No EVENT edges touching this entry (enable `--include-events` for Kafka).*")
+        lines.append("")
+
+    if event_impact_section:
+        lines.append("## Event impact")
+        lines.append("")
+        lines.append("*Transitive downstream over CALLS ∪ EVENT only (capped).*")
+        lines.append("")
+        ei = event_impact(g, entry_id, intelligence_cap)
+        if ei:
+            for x in ei:
+                lines.append(f"- `{_md_escape(str(x))}`")
+            if len(ei) >= intelligence_cap:
+                lines.append(f"- *…truncated at {intelligence_cap} items.*")
         else:
-            lines.append("*No EVENT edges touching this entry (Kafka listeners need `--include-events`).*")
+            lines.append("*None, or entry not in graph (enable `--include-events` / `--flow-include-event-edges` as needed).*")
         lines.append("")
 
     if cluster_by_file and entry_id in g:

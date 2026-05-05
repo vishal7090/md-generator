@@ -55,6 +55,8 @@ class GoParser:
             return fr
         if isinstance(data, dict) and data.get("error"):
             return fr
+        if isinstance(data, dict):
+            fr.ir_dump = data
         fp = str(path.resolve())
         for fn in data.get("funcs", []) or []:
             fid = fn.get("id")

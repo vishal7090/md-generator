@@ -314,7 +314,7 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             if ek and ek not in include_map:
                 continue
         emitted_slugs += 1
-        sl = slice_from_entry(g, eid, cfg.depth)
+        sl = slice_from_entry(g, eid, cfg.depth, relations=cfg.flow_slice_relations())
         slug = _slug(eid)
         sub = entry_base / slug
         sub.mkdir(parents=True, exist_ok=True)
@@ -358,6 +358,7 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     intelligence_transitive_callers=cfg.intelligence_transitive_callers,
                     include_references=cfg.include_references,
                     include_events=cfg.include_events,
+                    event_impact_section=cfg.event_impact,
                     cluster_by_file=cluster_by_file,
                 )
                 if cfg.business_rules_combined:
@@ -379,6 +380,7 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     intelligence_transitive_callers=cfg.intelligence_transitive_callers,
                     include_references=cfg.include_references,
                     include_events=cfg.include_events,
+                    event_impact_section=cfg.event_impact,
                     cluster_by_file=cluster_by_file,
                 )
             if eid in g:
@@ -551,62 +553,13 @@ def _slug(entry_id: str) -> str:
 
 def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> bytes:
     """Run scan into a temp dir and return zip bytes (for API)."""
+    from dataclasses import replace
+
     td = Path(tempfile.mkdtemp(prefix="codeflow-scan-"))
     try:
         root = workspace_root or cfg.project_root
         wc = LoadedWorkspace(root=root.resolve(), cleanup_dir=None)
-        cfg2 = ScanConfig(
-            project_root=root.resolve(),
-            paths_override=cfg.paths_override,
-            output_path=td / "out",
-            formats=cfg.formats,
-            depth=cfg.depth,
-            languages=cfg.languages,
-            entry=cfg.entry,
-            include=cfg.include,
-            exclude=cfg.exclude,
-            include_internal=cfg.include_internal,
-            async_mode=cfg.async_mode,
-            jobs=cfg.jobs,
-            runtime=cfg.runtime,
-            business_rules=cfg.business_rules,
-            business_rules_sql=cfg.business_rules_sql,
-            business_rules_combined=cfg.business_rules_combined,
-            entry_fallback=cfg.entry_fallback,
-            entry_fallback_max=cfg.entry_fallback_max,
-            emit_entry_per_method=cfg.emit_entry_per_method,
-            emit_entry_max=cfg.emit_entry_max,
-            emit_entry_filter=cfg.emit_entry_filter,
-            entries_file=cfg.entries_file,
-            write_scan_summary=cfg.write_scan_summary,
-            liferay_portlet_base_classes=cfg.liferay_portlet_base_classes,
-            codeflow_config_path=cfg.codeflow_config_path,
-            emit_flow_tree_json=cfg.emit_flow_tree_json,
-            verbose=cfg.verbose,
-            emit_graph_schema=cfg.emit_graph_schema,
-            intelligence_list_cap=cfg.intelligence_list_cap,
-            emit_cfg=cfg.emit_cfg,
-            cfg_max_nodes=cfg.cfg_max_nodes,
-            cfg_inline_calls=cfg.cfg_inline_calls,
-            cfg_call_depth=cfg.cfg_call_depth,
-            cfg_max_paths=cfg.cfg_max_paths,
-            cfg_path_max_depth=cfg.cfg_path_max_depth,
-            cfg_loop_visits=cfg.cfg_loop_visits,
-            cfg_probability=cfg.cfg_probability,
-            cfg_mermaid_probabilities=cfg.cfg_mermaid_probabilities,
-            cfg_runtime_trace=cfg.cfg_runtime_trace,
-            cfg_loop_repeat_prob=cfg.cfg_loop_repeat_prob,
-            graph_include_structural=cfg.graph_include_structural,
-            include_references=cfg.include_references,
-            include_events=cfg.include_events,
-            cluster_mode=cfg.cluster_mode,
-            graph_query=cfg.graph_query,
-            intelligence_transitive_callers=cfg.intelligence_transitive_callers,
-            emit_system_graph_stats=cfg.emit_system_graph_stats,
-            emit_graph_sqlite=cfg.emit_graph_sqlite,
-            emit_graph_communities=cfg.emit_graph_communities,
-            emit_llm_entry_sidecar=cfg.emit_llm_entry_sidecar,
-        )
+        cfg2 = replace(cfg, project_root=root.resolve(), output_path=td / "out")
         run_scan(cfg2, workspace=wc)
         buf = td / "bundle.zip"
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
