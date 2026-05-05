@@ -84,6 +84,14 @@ class ScanConfig:
     flow_include_reference_edges: bool = False
     # Markdown: add Event impact section (CALLS ∪ EVENT reachability).
     event_impact: bool = False
+    # Optional semantic layer (local SentenceTransformers; install mdengine[codeflow-semantic]).
+    enable_embeddings: bool = False
+    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_max_nodes: int = 5000
+    embedding_k_clusters: int = 8
+    semantic_top_k: int = 10
+    semantic_search: str | None = None
+    emit_html_unified: bool = False
 
     def parsed_include(self) -> set[str] | None:
         if not self.include or not str(self.include).strip():

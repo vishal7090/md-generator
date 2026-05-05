@@ -65,6 +65,13 @@ class AnalyzeOptions(BaseModel):
     event_impact: bool | None = None
     cluster_mode: Literal["file_imports", "structural", "semantic", "hybrid"] | None = None
     graph_query: str | None = None
+    enable_embeddings: bool | None = None
+    embedding_model: str | None = None
+    embedding_max_nodes: int | None = None
+    embedding_k_clusters: int | None = None
+    semantic_top_k: int | None = None
+    semantic_search: str | None = None
+    emit_html_unified: bool | None = None
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -134,6 +141,13 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     eimp = False if not raw or raw.event_impact is None else bool(raw.event_impact)
     cm = "file_imports" if not raw or raw.cluster_mode is None else raw.cluster_mode
     gq = None if not raw or raw.graph_query is None or not str(raw.graph_query).strip() else str(raw.graph_query).strip()
+    eemb = False if not raw or raw.enable_embeddings is None else bool(raw.enable_embeddings)
+    emod = "all-MiniLM-L6-v2" if not raw or raw.embedding_model is None else str(raw.embedding_model)
+    emax = 5000 if not raw or raw.embedding_max_nodes is None else int(raw.embedding_max_nodes)
+    ekc = 8 if not raw or raw.embedding_k_clusters is None else int(raw.embedding_k_clusters)
+    stk = 10 if not raw or raw.semantic_top_k is None else int(raw.semantic_top_k)
+    ssr = None if not raw or raw.semantic_search is None or not str(raw.semantic_search).strip() else str(raw.semantic_search).strip()
+    ehu = False if not raw or raw.emit_html_unified is None else bool(raw.emit_html_unified)
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -181,6 +195,13 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         event_impact=eimp,
         cluster_mode=cm,  # type: ignore[arg-type]
         graph_query=gq,
+        enable_embeddings=eemb,
+        embedding_model=emod,
+        embedding_max_nodes=emax,
+        embedding_k_clusters=ekc,
+        semantic_top_k=stk,
+        semantic_search=ssr,
+        emit_html_unified=ehu,
         intelligence_transitive_callers=itc,
         emit_system_graph_stats=esgs,
         emit_graph_sqlite=egsql,
@@ -254,6 +275,13 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "event_impact": cfg.event_impact,
         "cluster_mode": cfg.cluster_mode,
         "graph_query": cfg.graph_query,
+        "enable_embeddings": cfg.enable_embeddings,
+        "embedding_model": cfg.embedding_model,
+        "embedding_max_nodes": cfg.embedding_max_nodes,
+        "embedding_k_clusters": cfg.embedding_k_clusters,
+        "semantic_top_k": cfg.semantic_top_k,
+        "semantic_search": cfg.semantic_search,
+        "emit_html_unified": cfg.emit_html_unified,
     }
 
 
@@ -316,6 +344,13 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         event_impact=bool(data.get("event_impact", False)),
         cluster_mode=data.get("cluster_mode", "file_imports"),  # type: ignore[arg-type]
         graph_query=data.get("graph_query"),
+        enable_embeddings=bool(data.get("enable_embeddings", False)),
+        embedding_model=str(data.get("embedding_model", "all-MiniLM-L6-v2")),
+        embedding_max_nodes=int(data.get("embedding_max_nodes", 5000)),
+        embedding_k_clusters=int(data.get("embedding_k_clusters", 8)),
+        semantic_top_k=int(data.get("semantic_top_k", 10)),
+        semantic_search=data.get("semantic_search"),
+        emit_html_unified=bool(data.get("emit_html_unified", False)),
     )
 
 

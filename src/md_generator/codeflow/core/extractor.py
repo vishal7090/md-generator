@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -213,6 +214,10 @@ def _write_scan_summary(
         f"- **cluster_mode:** `{cfg.cluster_mode}`",
         f"- **graph_query:** {repr(cfg.graph_query) if cfg.graph_query else 'None'}",
         f"- **emit_llm_entry_sidecar:** {cfg.emit_llm_entry_sidecar}",
+        f"- **enable_embeddings:** {cfg.enable_embeddings}",
+        f"- **embedding_model:** `{cfg.embedding_model}`",
+        f"- **semantic_top_k:** {cfg.semantic_top_k}",
+        f"- **emit_html_unified:** {cfg.emit_html_unified}",
         "",
     ]
     if warnings:
@@ -226,11 +231,20 @@ def _write_scan_summary(
         "Large repos should use `--emit-entry-max` / `entry_fallback_max` to limit output.",
     )
     lines.append("")
-    lines.append(
-        "**Hybrid signals (no embeddings):** per-entry CFG path enumeration when `--emit-cfg` is on; "
-        "Markdown *Called by* / *Impact* use dependency reachability (calls + structural edges; CONTAINS excluded); "
-        "`graph-communities.json` / `graph.db` when those flags are enabled. Semantic embeddings are not part of this scan.",
-    )
+    if cfg.enable_embeddings:
+        lines.append(
+            "**Semantic layer:** with `--enable-embeddings` and `mdengine[codeflow-semantic]`, vectors are cached under "
+            "`.codeflow_cache/semantic/`. First model download may require network (`HF_HOME`). "
+            "`semantic-manifest.json`, optional `semantic-search-results.json`, and per-entry `semantic-neighbors.json` "
+            "are written when embeddings succeed.",
+        )
+    else:
+        lines.append(
+            "**Hybrid signals (no embeddings):** per-entry CFG path enumeration when `--emit-cfg` is on; "
+            "Markdown *Called by* / *Impact* use dependency reachability (calls + structural edges; CONTAINS excluded); "
+            "`graph-communities.json` / `graph.db` when those flags are enabled. "
+            "Enable `--enable-embeddings` for local SentenceTransformer similarity and semantic/hybrid clustering.",
+        )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -274,24 +288,87 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
     if cfg.include_events:
         apply_event_edges(g, parse_results)
 
-    cluster_by_file: dict[str, int] | None = None
-    comm_payload: list[Any] | None = None
-    comm_algo: str | None = None
-    if cfg.emit_graph_communities or "md" in {x.strip().lower() for x in cfg.formats}:
-        comm_payload, comm_algo = communities_for_mode(g, cfg.cluster_mode)
-        if comm_payload and "md" in {x.strip().lower() for x in cfg.formats}:
-            cluster_by_file = file_cluster_labels(g, comm_payload, cfg.cluster_mode)
+    semantic_artifacts = None
+    scan_semantic_warnings: list[str] = []
+    if cfg.enable_embeddings:
+        try:
+            from md_generator.codeflow.graph.semantic_enricher import attach_semantic_groups, build_semantic_artifacts
+
+            semantic_artifacts = build_semantic_artifacts(
+                g,
+                ws.root,
+                model_id=cfg.embedding_model,
+                max_nodes=cfg.embedding_max_nodes,
+                k_semantic=cfg.embedding_k_clusters,
+            )
+            if semantic_artifacts:
+                attach_semantic_groups(g, semantic_artifacts.labels)
+            else:
+                scan_semantic_warnings.append(
+                    "enable_embeddings: fewer than 2 embeddable method/entry nodes; semantic artifacts skipped.",
+                )
+        except ImportError as e:
+            scan_semantic_warnings.append(
+                f"enable_embeddings requires optional extra mdengine[codeflow-semantic] ({e}).",
+            )
 
     out = cfg.output_path
     out.mkdir(parents=True, exist_ok=True)
 
     all_entries = [e for pr in parse_results for e in pr.entries]
     entry_ids, scan_warnings = _resolve_scan_entry_ids(cfg, g, all_entries)
+    scan_warnings.extend(scan_semantic_warnings)
 
     fmts = {x.strip().lower() for x in cfg.formats}
 
+    cluster_by_file: dict[str, int] | None = None
+    comm_payload: list[Any] | None = None
+    comm_algo: str | None = None
+    if cfg.emit_graph_communities or "md" in fmts:
+        sem_labs = None
+        if semantic_artifacts and cfg.cluster_mode in ("semantic", "hybrid"):
+            sem_labs = semantic_artifacts.labels
+        comm_payload, comm_algo = communities_for_mode(
+            g,
+            cfg.cluster_mode,
+            semantic_labels=sem_labs,
+            k_semantic=cfg.embedding_k_clusters,
+        )
+        if comm_payload and "md" in fmts:
+            cluster_by_file = file_cluster_labels(g, comm_payload, cfg.cluster_mode)
+
+    search_hits_list: list[dict[str, Any]] | None = None
+    if semantic_artifacts:
+        (out / "semantic-manifest.json").write_text(
+            json.dumps(
+                {
+                    "model_id": semantic_artifacts.model_id,
+                    "embedded_node_count": len(semantic_artifacts.node_ids),
+                    "k_clusters": cfg.embedding_k_clusters,
+                    "algorithm": "sentence_transformers + sklearn_kmeans + cosine_index",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        q = (cfg.semantic_search or "").strip()
+        if q:
+            from md_generator.codeflow.api.semantic_api import search_similar_serializable
+
+            search_hits_list = search_similar_serializable(
+                semantic_artifacts,
+                q,
+                cfg.semantic_top_k,
+                g,
+            )
+            (out / "semantic-search-results.json").write_text(
+                json.dumps({"query": q, "hits": search_hits_list}, indent=2),
+                encoding="utf-8",
+            )
+
     entry_ids = sort_entry_ids(entry_ids, g, all_entries)
     entry_by_symbol = {e.symbol_id: e for e in all_entries}
+    cluster_mode_note = f"{cfg.cluster_mode} ({comm_algo or 'n/a'})"
 
     include_map = cfg.parsed_include()
     overview_rows: list[tuple[str, str, str, str, str]] = []
@@ -319,6 +396,17 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         sub = entry_base / slug
         sub.mkdir(parents=True, exist_ok=True)
         rec = entry_by_symbol.get(eid)
+        neighbor_rows: list[dict[str, Any]] | None = None
+        neigh_wrap: dict[str, Any] | None = None
+        if semantic_artifacts:
+            from md_generator.codeflow.api.semantic_api import neighbors_serializable
+
+            neighbor_rows = neighbors_serializable(semantic_artifacts, eid, cfg.semantic_top_k, g)
+            neigh_wrap = {"entry_id": eid, "top_k": neighbor_rows}
+            (sub / "semantic-neighbors.json").write_text(json.dumps(neigh_wrap, indent=2), encoding="utf-8")
+        semantic_search_href: str | None = None
+        if (out / "semantic-search-results.json").is_file():
+            semantic_search_href = os.path.relpath(out / "semantic-search-results.json", sub).replace("\\", "/")
         if "md" in fmts:
             write_flow_markdown(
                 sub / "flow.md",
@@ -360,6 +448,8 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     include_events=cfg.include_events,
                     event_impact_section=cfg.event_impact,
                     cluster_by_file=cluster_by_file,
+                    enable_embeddings=cfg.enable_embeddings,
+                    semantic_neighbors=neighbor_rows,
                 )
                 if cfg.business_rules_combined:
                     write_combined_entry_markdown(
@@ -382,6 +472,8 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     include_events=cfg.include_events,
                     event_impact_section=cfg.event_impact,
                     cluster_by_file=cluster_by_file,
+                    enable_embeddings=cfg.enable_embeddings,
+                    semantic_neighbors=neighbor_rows,
                 )
             if eid in g:
                 k = rec.kind.value if rec else g.nodes[eid].get("entry_kind")
@@ -489,6 +581,26 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         if "html" in fmts:
             sub_g = g.subgraph(sl.nodes).copy()
             write_html_bundle(sub / "index.html", eid, sl, graph_to_serializable(sub_g))
+        if cfg.emit_html_unified:
+            from md_generator.codeflow.generators.html_unified import write_html_unified
+
+            sub_gu = g.subgraph(sl.nodes).copy()
+            slice_json = graph_to_serializable(sub_gu)
+            cfg_mmd_u: str | None = None
+            pm_u = sub / "cfg.mmd"
+            if pm_u.is_file():
+                cfg_mmd_u = pm_u.read_text(encoding="utf-8", errors="replace")
+            write_html_unified(
+                sub,
+                eid,
+                sl,
+                slice_json,
+                cfg_mermaid_text=cfg_mmd_u,
+                semantic_neighbors=neigh_wrap,
+                search_hits=search_hits_list,
+                cluster_mode_note=cluster_mode_note,
+                semantic_search_results_href=semantic_search_href,
+            )
 
     if "json" in fmts:
         full = graph_to_serializable(g)

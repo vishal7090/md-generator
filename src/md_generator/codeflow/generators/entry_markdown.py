@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import networkx as nx
 
@@ -285,6 +286,8 @@ def write_entry_markdown(
     include_events: bool = False,
     event_impact_section: bool = False,
     cluster_by_file: dict[str, int] | None = None,
+    enable_embeddings: bool = False,
+    semantic_neighbors: list[dict[str, Any]] | None = None,
 ) -> None:
     lines: list[str] = []
     lines.append("# Execution Flow Documentation")
@@ -433,6 +436,30 @@ def write_entry_markdown(
             lines.append("## Cluster")
             lines.append("")
             lines.append(f"- **Community id:** {cid0} (from `cluster_mode` communities)")
+            lines.append("")
+
+    if enable_embeddings and entry_id in g:
+        sg = g.nodes[entry_id].get("semantic_group")
+        if sg is not None:
+            lines.append("## Semantic group")
+            lines.append("")
+            lines.append(f"- **KMeans cluster (embedding):** {int(sg)}")
+            lines.append("")
+        if semantic_neighbors:
+            lines.append("## Similar methods")
+            lines.append("")
+            lines.append("*Cosine similarity in embedding space (global index; see `semantic-neighbors.json`).*")
+            lines.append("")
+            for row in semantic_neighbors:
+                nid = str(row.get("node_id", ""))
+                sc = row.get("score")
+                name = row.get("name")
+                cn = row.get("class_name")
+                lab = f"{cn}.{name}" if cn and name else nid
+                if isinstance(sc, int | float):
+                    lines.append(f"- `{_md_escape(nid)}` — {float(sc):.4f} — {_md_escape(str(lab))}")
+                else:
+                    lines.append(f"- `{_md_escape(nid)}` — {_md_escape(str(lab))}")
             lines.append("")
 
     if entry_id in g:

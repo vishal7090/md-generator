@@ -88,6 +88,14 @@ def semantic_clusters_from_embeddings(embeddings: list[list[float]], k: int = 8)
     return [int(x) for x in km.fit_predict(arr)]
 
 
+def communities_from_semantic_labels(semantic_labels: dict[str, int]) -> list[list[str]]:
+    """One community per KMeans label; members sorted."""
+    buckets: dict[int, list[str]] = {}
+    for nid, lab in semantic_labels.items():
+        buckets.setdefault(int(lab), []).append(nid)
+    return [sorted(buckets[k]) for k in sorted(buckets)]
+
+
 def hybrid_cluster_labels(
     structural: list[list[str]],
     node_semantic_label: dict[str, int],
@@ -111,8 +119,11 @@ def communities_for_mode(
     mode: str,
     *,
     max_undirected_nodes: int = 4000,
+    semantic_labels: dict[str, int] | None = None,
+    k_semantic: int = 8,
 ) -> tuple[list[Any], str]:
     """Return (communities_payload, algorithm_note)."""
+    del k_semantic  # reserved for future (e.g. adaptive k)
     if mode in ("", "file_imports", "default"):
         comms = greedy_modularity_file_communities(g, max_undirected_nodes=max_undirected_nodes)
         return comms, "greedy_modularity_file_imports"
@@ -120,10 +131,16 @@ def communities_for_mode(
         comms = greedy_modularity_structural_communities(g, max_undirected_nodes=max_undirected_nodes)
         return comms, "greedy_modularity_structural_calls_imports"
     if mode == "semantic":
+        if semantic_labels:
+            comms = communities_from_semantic_labels(semantic_labels)
+            return comms, "kmeans_embeddings"
         _LOG.warning("semantic cluster_mode requires embeddings; no-op in scan pipeline")
         return [], "semantic_skipped_no_embeddings"
     if mode == "hybrid":
         struct = greedy_modularity_structural_communities(g, max_undirected_nodes=max_undirected_nodes)
+        if semantic_labels:
+            hybrid = hybrid_cluster_labels(struct, semantic_labels)
+            return hybrid, "hybrid_structural_kmeans"
         hybrid = hybrid_cluster_labels(struct, {})
         return hybrid, "hybrid_structural_with_empty_semantic"
     return greedy_modularity_file_communities(g, max_undirected_nodes=max_undirected_nodes), "greedy_modularity_file_imports"

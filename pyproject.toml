@@ -129,6 +129,12 @@ codeflow-treesitter = [
 codeflow-clang = [
   "clang>=16.0.0",
 ]
+# Embeddings + semantic clustering (SentenceTransformers pulls torch; large install).
+codeflow-semantic = [
+  "numpy>=1.24.0",
+  "scikit-learn>=1.3.0",
+  "sentence-transformers>=3.0.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",

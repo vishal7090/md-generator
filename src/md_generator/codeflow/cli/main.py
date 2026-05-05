@@ -284,6 +284,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add Event impact section (CALLS ∪ EVENT downstream) in entry.md (default: off)",
     )
     scan.add_argument(
+        "--enable-embeddings",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Build local sentence embeddings (requires mdengine[codeflow-semantic]); cache under .codeflow_cache",
+    )
+    scan.add_argument(
+        "--embedding-model",
+        default="all-MiniLM-L6-v2",
+        help="SentenceTransformers model id when --enable-embeddings (default: all-MiniLM-L6-v2)",
+    )
+    scan.add_argument(
+        "--embedding-max-nodes",
+        type=int,
+        default=5000,
+        help="Max nodes to embed per scan (default: 5000)",
+    )
+    scan.add_argument(
+        "--embedding-k-clusters",
+        type=int,
+        default=8,
+        help="K for KMeans semantic groups when cluster mode is semantic/hybrid (default: 8)",
+    )
+    scan.add_argument(
+        "--semantic-top-k",
+        type=int,
+        default=10,
+        help="Top-K similar nodes per entry and for --semantic-search (default: 10)",
+    )
+    scan.add_argument(
+        "--semantic-search",
+        default=None,
+        metavar="QUERY",
+        help="When set with --enable-embeddings, write semantic-search-results.json (query embedding once)",
+    )
+    scan.add_argument(
+        "--emit-html-unified",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write index.unified.html per entry (Cytoscape + CFG Mermaid + semantic sidebar)",
+    )
+    scan.add_argument(
         "--graph-include-structural",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -478,6 +519,13 @@ def main(argv: list[str] | None = None) -> int:
             flow_include_event_edges=bool(ns.flow_include_event_edges),
             flow_include_reference_edges=bool(ns.flow_include_reference_edges),
             event_impact=bool(ns.event_impact),
+            enable_embeddings=bool(ns.enable_embeddings),
+            embedding_model=str(ns.embedding_model),
+            embedding_max_nodes=int(ns.embedding_max_nodes),
+            embedding_k_clusters=int(ns.embedding_k_clusters),
+            semantic_top_k=int(ns.semantic_top_k),
+            semantic_search=ns.semantic_search,
+            emit_html_unified=bool(ns.emit_html_unified),
             graph_include_structural=bool(ns.graph_include_structural),
             include_references=bool(ns.include_references),
             include_events=bool(ns.include_events),
