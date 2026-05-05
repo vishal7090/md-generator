@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -101,24 +101,7 @@ class CodeflowJobManager:
             zf.extractall(src)
 
         out = ws / "out"
-        cfg = ScanConfig(
-            project_root=src,
-            output_path=out,
-            formats=cfg_template.formats,
-            depth=cfg_template.depth,
-            languages=cfg_template.languages,
-            entry=cfg_template.entry,
-            include=cfg_template.include,
-            exclude=cfg_template.exclude,
-            include_internal=cfg_template.include_internal,
-            async_mode=cfg_template.async_mode,
-            jobs=True,
-            runtime=cfg_template.runtime,
-            paths_override=cfg_template.paths_override,
-            business_rules=cfg_template.business_rules,
-            business_rules_sql=cfg_template.business_rules_sql,
-            business_rules_combined=cfg_template.business_rules_combined,
-        )
+        cfg = replace(cfg_template, project_root=src, output_path=out, jobs=True)
         now = time.time()
         cfg_dump = json.dumps(scan_config_dump(cfg), sort_keys=True)
         assert self._conn is not None

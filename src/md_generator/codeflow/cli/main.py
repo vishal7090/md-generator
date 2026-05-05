@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from md_generator.codeflow.core.extractor import run_scan
 from md_generator.codeflow.core.run_config import ScanConfig
-from md_generator.codeflow.ingestion.loader import load_workspace, source_file_extensions
+from md_generator.codeflow.ingestion.git_loader import (
+    GitLoaderError,
+    clean_all_cache,
+    clone_or_update_repo,
+    is_git_remote,
+)
+from md_generator.codeflow.ingestion.loader import LoadedWorkspace, load_workspace, source_file_extensions
 
 
 def _parse_formats(s: str | None) -> tuple[str, ...]:
@@ -22,12 +29,20 @@ def _parse_entry(s: str | None) -> list[str] | None:
     return [x.strip() for x in str(s).split(",") if x.strip()]
 
 
+def _parse_csv_identifiers(s: str | None) -> tuple[str, ...]:
+    if not s or not str(s).strip():
+        return ()
+    return tuple(x.strip() for x in str(s).split(",") if x.strip())
+
+
 def _normalize_include(raw: str | None) -> str | None:
     if not raw:
         return None
     mapping = {
         "api": "api_rest",
         "rest": "api_rest",
+        "portlet": "portlet",
+        "liferay": "portlet",
         "event": "kafka",
         "kafka": "kafka",
         "main": "main",
@@ -45,8 +60,14 @@ def _normalize_include(raw: str | None) -> str | None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Analyze source code execution flows → Markdown/Mermaid/graph.")
     sub = p.add_subparsers(dest="cmd", required=True)
-    scan = sub.add_parser("scan", help="Scan a folder, file, or zip archive")
-    scan.add_argument("path", type=Path, help="Directory, source file, or .zip archive")
+    scan = sub.add_parser("scan", help="Scan a folder, file, .zip archive, or Git remote URL")
+    scan.add_argument(
+        "path",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Local directory, source file, .zip, or https/git remote URL (omit when using --clean-git-cache only)",
+    )
     scan.add_argument("--output", "-o", type=Path, default=None, help="Output directory")
     scan.add_argument("--entry", default=None, help="Comma-separated symbol ids (Class.method style)")
     scan.add_argument(
@@ -83,6 +104,323 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Write entry.combined.md (entry.md + business_rules.md) (default: on)",
     )
+    scan.add_argument(
+        "--entry-fallback",
+        choices=["none", "roots", "first_n"],
+        default="roots",
+        help="When no detected entries: none | in-degree-0 roots | first N symbols (default: roots)",
+    )
+    scan.add_argument(
+        "--entry-fallback-max",
+        type=int,
+        default=20,
+        help="Max symbols when using roots or first_n fallback (default: 20)",
+    )
+    scan.add_argument(
+        "--emit-entry-per-method",
+        action="store_true",
+        default=False,
+        help="Emit one output slug per method/entry symbol (use --emit-entry-max to cap)",
+    )
+    scan.add_argument(
+        "--emit-entry-max",
+        type=int,
+        default=None,
+        help="Cap for --emit-entry-per-method (default: 10000 when flag set and unset)",
+    )
+    scan.add_argument(
+        "--emit-entry-filter",
+        default=None,
+        help="Regex filter on symbol_id when using --emit-entry-per-method",
+    )
+    scan.add_argument(
+        "--entries-file",
+        type=Path,
+        default=None,
+        help="File with one symbol_id per line (# comments allowed); resolved paths",
+    )
+    scan.add_argument(
+        "--no-scan-summary",
+        action="store_true",
+        default=False,
+        help="Skip writing scan-summary.md at output root",
+    )
+    scan.add_argument(
+        "--liferay-portlet-bases",
+        default=None,
+        help="Extra Liferay portlet superclass simple names (comma-separated); merged with built-in defaults",
+    )
+    scan.add_argument(
+        "--codeflow-config",
+        type=Path,
+        default=None,
+        help="Path to codeflow.yaml (default: <project_root>/codeflow.yaml if present)",
+    )
+    scan.add_argument(
+        "--emit-flow-tree-json",
+        action="store_true",
+        default=False,
+        help="Write flow-tree.json (static DFS tree from the flow slice) beside each entry output",
+    )
+    scan.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable DEBUG logging for md_generator.codeflow",
+    )
+    scan.add_argument(
+        "--emit-graph-schema",
+        action="store_true",
+        default=False,
+        help="With json format, also write graph-schema.json (stable Node/Edge view with File/Class hierarchy)",
+    )
+    scan.add_argument(
+        "--intelligence-list-cap",
+        type=int,
+        default=80,
+        help="Max items for Called by / Impact lists in Markdown (default: 80)",
+    )
+    scan.add_argument(
+        "--emit-cfg",
+        action="store_true",
+        default=False,
+        help="Build IR-based CFG per entry (cfg.json, cfg.mmd; append CFG Mermaid to flow.md when md is enabled)",
+    )
+    scan.add_argument(
+        "--cfg-max-nodes",
+        type=int,
+        default=500,
+        help="Safety cap on CFG nodes when using --emit-cfg (default: 500)",
+    )
+    scan.add_argument(
+        "--cfg-inline-calls",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="When using --emit-cfg, inline callee CFGs at CALL nodes (default: off)",
+    )
+    scan.add_argument(
+        "--cfg-call-depth",
+        type=int,
+        default=3,
+        help="Max CALL inlining depth when --cfg-inline-calls (default: 3)",
+    )
+    scan.add_argument(
+        "--cfg-max-paths",
+        type=int,
+        default=100,
+        help="Max enumerated START→END paths when using --emit-cfg (default: 100)",
+    )
+    scan.add_argument(
+        "--cfg-path-max-depth",
+        type=int,
+        default=1000,
+        help="Max DFS depth for path enumeration (default: 1000)",
+    )
+    scan.add_argument(
+        "--cfg-loop-visits",
+        type=int,
+        default=2,
+        help="Max LOOP_HDR revisits per path before forcing exit edges (default: 2)",
+    )
+    scan.add_argument(
+        "--cfg-probability",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Score enumerated CFG paths with default branch weights (and runtime trace if set)",
+    )
+    scan.add_argument(
+        "--cfg-mermaid-probabilities",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Annotate cfg.mmd edges with static/runtime p= when using --emit-cfg",
+    )
+    scan.add_argument(
+        "--cfg-runtime-trace",
+        type=Path,
+        default=None,
+        help="JSON file with counts {\"u->v\": n} to set CFG edge runtime_prob (optional)",
+    )
+    scan.add_argument(
+        "--cfg-loop-repeat-prob",
+        type=float,
+        default=0.6,
+        help="Default probability for LOOP_HDR repeat edge (exit uses 1 minus this; default: 0.6)",
+    )
+    scan.add_argument(
+        "--cfg-ir-go",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When using --emit-cfg, populate IR for Go from codeflow_go_dump (default: on)",
+    )
+    scan.add_argument(
+        "--cfg-ir-php",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When using --emit-cfg, populate IR for PHP from codeflow_php_dump (default: on)",
+    )
+    scan.add_argument(
+        "--cfg-ir-cpp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When using --emit-cfg, populate IR for C/C++ via tree-sitter-cpp (default: on)",
+    )
+    scan.add_argument(
+        "--flow-include-event-edges",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Include EVENT edges in flow slice and flow.mmd (pair with --include-events; default: off)",
+    )
+    scan.add_argument(
+        "--flow-include-reference-edges",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Include REFERENCES edges in flow slice and flow.mmd (default: off)",
+    )
+    scan.add_argument(
+        "--event-impact",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add Event impact section (CALLS ∪ EVENT downstream) in entry.md (default: off)",
+    )
+    scan.add_argument(
+        "--enable-embeddings",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Build local sentence embeddings (requires mdengine[codeflow-semantic]); cache under .codeflow_cache",
+    )
+    scan.add_argument(
+        "--embedding-model",
+        default="all-MiniLM-L6-v2",
+        help="SentenceTransformers model id when --enable-embeddings (default: all-MiniLM-L6-v2)",
+    )
+    scan.add_argument(
+        "--embedding-max-nodes",
+        type=int,
+        default=5000,
+        help="Max nodes to embed per scan (default: 5000)",
+    )
+    scan.add_argument(
+        "--embedding-k-clusters",
+        type=int,
+        default=8,
+        help="K for KMeans semantic groups when cluster mode is semantic/hybrid (default: 8)",
+    )
+    scan.add_argument(
+        "--semantic-top-k",
+        type=int,
+        default=10,
+        help="Top-K similar nodes per entry and for --semantic-search (default: 10)",
+    )
+    scan.add_argument(
+        "--semantic-search",
+        default=None,
+        metavar="QUERY",
+        help="When set with --enable-embeddings, write semantic-search-results.json (query embedding once)",
+    )
+    scan.add_argument(
+        "--emit-html-unified",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write index.unified.html per entry (Cytoscape + CFG Mermaid + semantic sidebar)",
+    )
+    scan.add_argument(
+        "--graph-include-structural",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Merge parser structural edges (IMPORTS / INHERITS / …; Java) into the graph (default: off)",
+    )
+    scan.add_argument(
+        "--intelligence-transitive-callers",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="List transitive callers in Called By sections (default: direct only)",
+    )
+    scan.add_argument(
+        "--emit-system-graph-stats",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Append graph inventory (counts, top out-degree) to system_overview.md",
+    )
+    scan.add_argument(
+        "--emit-graph-sqlite",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write graph.db (SQLite nodes/edges) alongside graph-full.json",
+    )
+    scan.add_argument(
+        "--emit-graph-communities",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="When json format is on, write graph-communities.json (modularity; mode via --cluster-mode)",
+    )
+    scan.add_argument(
+        "--include-references",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Merge parser REFERENCES edges into the graph (Python/Java/TS heuristics)",
+    )
+    scan.add_argument(
+        "--include-events",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add Kafka topic nodes and EVENT edges (listeners + heuristic producers) for Java",
+    )
+    scan.add_argument(
+        "--cluster-mode",
+        choices=("file_imports", "structural", "semantic", "hybrid"),
+        default="file_imports",
+        help="Clustering layer for graph-communities.json and entry.md cluster line",
+    )
+    scan.add_argument(
+        "--graph-query",
+        default=None,
+        metavar="MATCH",
+        help='Optional Cypher-like pattern (e.g. MATCH (a)-[CALLS]->(b)); writes query-results.json when json format is on',
+    )
+    scan.add_argument(
+        "--emit-llm-entry-sidecar",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write entry.llm.md beside each entry.md (pointers for LLM workflows)",
+    )
+    scan.add_argument(
+        "--git-branch",
+        "--branch",
+        dest="git_branch",
+        default=None,
+        help="After clone/update, check out this branch (Git remote input only)",
+    )
+    scan.add_argument(
+        "--git-commit",
+        "--commit",
+        dest="git_commit",
+        default=None,
+        help="After branch (or default), check out this commit SHA (Git remote input only)",
+    )
+    scan.add_argument(
+        "--git-auth-token",
+        default=None,
+        help="HTTPS token (injected per host; never printed). Prefer env-specific URLs in CI.",
+    )
+    scan.add_argument(
+        "--git-ssh-key",
+        type=Path,
+        default=None,
+        help="Path to SSH private key for git@… remotes (sets GIT_SSH_COMMAND for clone/pull)",
+    )
+    scan.add_argument(
+        "--no-git-cache",
+        action="store_true",
+        default=False,
+        help="Delete cached clone for this URL and re-clone fresh",
+    )
+    scan.add_argument(
+        "--clean-git-cache",
+        action="store_true",
+        default=False,
+        help="Remove all cached Git clones under the codeflow cache dir, then exit (no scan)",
+    )
     return p
 
 
@@ -92,17 +430,48 @@ def main(argv: list[str] | None = None) -> int:
     if ns.cmd != "scan":
         return 2
 
-    src = Path(ns.path).expanduser().resolve()
-    ws = load_workspace(path=src)
-    try:
+    if ns.clean_git_cache:
+        clean_all_cache()
+        print("Removed codeflow Git clone cache.", file=sys.stderr)
+        return 0
+
+    if not ns.path or not str(ns.path).strip():
+        print("codeflow scan: error: path is required (unless using --clean-git-cache)", file=sys.stderr)
+        return 2
+
+    raw = str(ns.path).strip()
+    if ns.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
+        logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
+
+    paths_override: list[Path] | None = None
+    if is_git_remote(raw):
+        try:
+            root = clone_or_update_repo(
+                raw,
+                branch=ns.git_branch,
+                commit=ns.git_commit,
+                no_cache=bool(ns.no_git_cache),
+                auth_token=ns.git_auth_token,
+                ssh_key_path=ns.git_ssh_key,
+            )
+        except GitLoaderError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        ws = LoadedWorkspace(root=root, cleanup_dir=None)
+    else:
+        src = Path(raw).expanduser().resolve()
+        ws = load_workspace(path=src)
         root = ws.root
-        paths_override: list[Path] | None = None
         if src.is_file() and src.suffix.lower() in source_file_extensions():
             paths_override = [src]
 
+    try:
         out = ns.output
         if out is None:
             out = Path.cwd() / "codeflow-out"
+        entries_file = Path(ns.entries_file).expanduser().resolve() if ns.entries_file else None
+        codeflow_cfg = Path(ns.codeflow_config).expanduser().resolve() if ns.codeflow_config else None
         cfg = ScanConfig(
             project_root=root,
             paths_override=paths_override,
@@ -120,12 +489,59 @@ def main(argv: list[str] | None = None) -> int:
             business_rules=bool(ns.business_rules),
             business_rules_sql=bool(ns.business_rules_sql),
             business_rules_combined=bool(ns.business_rules_combined),
+            entry_fallback=ns.entry_fallback,
+            entry_fallback_max=int(ns.entry_fallback_max),
+            emit_entry_per_method=bool(ns.emit_entry_per_method),
+            emit_entry_max=ns.emit_entry_max,
+            emit_entry_filter=ns.emit_entry_filter,
+            entries_file=entries_file,
+            write_scan_summary=not bool(ns.no_scan_summary),
+            liferay_portlet_base_classes=_parse_csv_identifiers(ns.liferay_portlet_bases),
+            codeflow_config_path=codeflow_cfg,
+            emit_flow_tree_json=bool(ns.emit_flow_tree_json),
+            verbose=bool(ns.verbose),
+            emit_graph_schema=bool(ns.emit_graph_schema),
+            intelligence_list_cap=int(ns.intelligence_list_cap),
+            emit_cfg=bool(ns.emit_cfg),
+            cfg_max_nodes=int(ns.cfg_max_nodes),
+            cfg_inline_calls=bool(ns.cfg_inline_calls),
+            cfg_call_depth=int(ns.cfg_call_depth),
+            cfg_max_paths=int(ns.cfg_max_paths),
+            cfg_path_max_depth=int(ns.cfg_path_max_depth),
+            cfg_loop_visits=int(ns.cfg_loop_visits),
+            cfg_probability=bool(ns.cfg_probability),
+            cfg_mermaid_probabilities=bool(ns.cfg_mermaid_probabilities),
+            cfg_runtime_trace=Path(ns.cfg_runtime_trace).expanduser().resolve() if ns.cfg_runtime_trace else None,
+            cfg_loop_repeat_prob=float(ns.cfg_loop_repeat_prob),
+            cfg_ir_go=bool(ns.cfg_ir_go),
+            cfg_ir_php=bool(ns.cfg_ir_php),
+            cfg_ir_cpp=bool(ns.cfg_ir_cpp),
+            flow_include_event_edges=bool(ns.flow_include_event_edges),
+            flow_include_reference_edges=bool(ns.flow_include_reference_edges),
+            event_impact=bool(ns.event_impact),
+            enable_embeddings=bool(ns.enable_embeddings),
+            embedding_model=str(ns.embedding_model),
+            embedding_max_nodes=int(ns.embedding_max_nodes),
+            embedding_k_clusters=int(ns.embedding_k_clusters),
+            semantic_top_k=int(ns.semantic_top_k),
+            semantic_search=ns.semantic_search,
+            emit_html_unified=bool(ns.emit_html_unified),
+            graph_include_structural=bool(ns.graph_include_structural),
+            include_references=bool(ns.include_references),
+            include_events=bool(ns.include_events),
+            cluster_mode=ns.cluster_mode,
+            graph_query=ns.graph_query,
+            intelligence_transitive_callers=bool(ns.intelligence_transitive_callers),
+            emit_system_graph_stats=bool(ns.emit_system_graph_stats),
+            emit_graph_sqlite=bool(ns.emit_graph_sqlite),
+            emit_graph_communities=bool(ns.emit_graph_communities),
+            emit_llm_entry_sidecar=bool(ns.emit_llm_entry_sidecar),
         )
         run_scan(cfg, workspace=ws)
         print(str(cfg.output_path.resolve()))
         return 0
     finally:
-        ws.close()
+        ws.close()  # no-op for Git cache / plain dirs; removes zip temp dirs
 
 
 if __name__ == "__main__":

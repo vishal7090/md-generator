@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import networkx as nx
 
-from md_generator.codeflow.models.ir import CallSite, FileParseResult
+from md_generator.codeflow.graph import relations as rel
+from md_generator.codeflow.graph.multigraph_utils import (
+    CodeflowGraph,
+    edge_payload,
+    find_edge_key_with_relation,
+    iter_multi_edges,
+)
+from md_generator.codeflow.models.ir import CallSite, FileParseResult, StructuralEdge
+
+_LOG = logging.getLogger(__name__)
 
 
 def _edge_unknown_call(call: CallSite, callee_id: str) -> bool:
@@ -22,15 +32,286 @@ def _edge_recursive(caller_id: str, callee_id: str) -> bool:
     return caller_id == callee_id
 
 
+def _call_edge_confidence(call: CallSite, callee_id: str) -> float:
+    """AST static -> 1.0, dynamic -> 0.7, unknown / unresolved -> 0.5."""
+    if str(callee_id).startswith("unknown::"):
+        return 0.5
+    if call.resolution == "unknown":
+        return 0.5
+    if call.resolution == "dynamic":
+        return 0.7
+    return 1.0
+
+
 @dataclass(slots=True)
 class GraphBuildResult:
-    graph: nx.DiGraph
+    graph: CodeflowGraph
     project_root: Path
 
 
-def build_graph(parse_results: list[FileParseResult], project_root: Path) -> GraphBuildResult:
-    """Merge file-level parse results into one DiGraph with node/edge attributes."""
-    g = nx.DiGraph()
+def _build_java_fqn_index(parse_results: list[FileParseResult], root: Path) -> tuple[dict[str, str], dict[str, str]]:
+    """Map dotted FQN -> class node id and FQN -> defining file rel path (Java only)."""
+    fqn_to_class: dict[str, str] = {}
+    fqn_to_file: dict[str, str] = {}
+    for fr in parse_results:
+        if fr.language != "java" or not (fr.java_package or "").strip():
+            continue
+        pkg = fr.java_package.strip()
+        rel = _safe_rel(fr.path, root)
+        for sid in fr.symbol_ids:
+            if "::" not in sid:
+                continue
+            _, rest = sid.split("::", 1)
+            if "." not in rest:
+                continue
+            fq_class = rest.rsplit(".", 1)[0]
+            fqn = f"{pkg}.{fq_class}" if fq_class else pkg
+            cid = f"class:{rel}::{fq_class}"
+            fqn_to_class.setdefault(fqn, cid)
+            fqn_to_file.setdefault(fqn, rel)
+    return fqn_to_class, fqn_to_file
+
+
+def _ensure_structural_vertex(g: CodeflowGraph, node_id: str, language: str) -> None:
+    if g.has_node(node_id):
+        return
+    if node_id.startswith("file:"):
+        fp = node_id[5:]
+        g.add_node(
+            node_id,
+            id=node_id,
+            type="file",
+            kind="File",
+            name=fp.split("/")[-1],
+            class_name=None,
+            method_name=None,
+            file_path=fp,
+            language=language,
+            tags=["file"],
+        )
+    elif node_id.startswith("class:"):
+        rest = node_id[6:]
+        if "::" in rest:
+            fp, cname = rest.split("::", 1)
+        else:
+            fp, cname = "", rest
+        g.add_node(
+            node_id,
+            id=node_id,
+            type="class",
+            kind="Class",
+            name=cname.split(".")[-1],
+            class_name=cname,
+            method_name=None,
+            file_path=fp,
+            language=language,
+            tags=["class"],
+        )
+    elif node_id.startswith("external:"):
+        g.add_node(
+            node_id,
+            id=node_id,
+            type="external",
+            kind="External",
+            name=node_id[9:].split(".")[-1],
+            class_name=None,
+            method_name=None,
+            file_path="",
+            language=language,
+            tags=["external"],
+        )
+    elif node_id.startswith("topic:"):
+        tname = node_id[6:]
+        g.add_node(
+            node_id,
+            id=node_id,
+            type="topic",
+            kind="Topic",
+            name=tname,
+            class_name=None,
+            method_name=None,
+            file_path="",
+            language=language,
+            tags=["event", "topic"],
+        )
+
+
+def _rewrite_structural_target(
+    target_id: str,
+    relation: str,
+    fqn_to_class: dict[str, str],
+    fqn_to_file: dict[str, str],
+) -> tuple[str, float]:
+    if not target_id.startswith("external::"):
+        return target_id, 1.0
+    fqn = target_id[len("external::") :]
+    if relation in (rel.REL_INHERITS, rel.REL_IMPLEMENTS) and fqn in fqn_to_class:
+        return fqn_to_class[fqn], 1.0
+    if relation == rel.REL_IMPORTS and fqn in fqn_to_file:
+        return f"file:{fqn_to_file[fqn]}", 1.0
+    return target_id, float(0.6 if relation == rel.REL_IMPORTS else 0.7)
+
+
+def _merge_structural_edges(
+    g: CodeflowGraph,
+    parse_results: list[FileParseResult],
+    root: Path,
+    *,
+    include_structural: bool,
+    include_references: bool,
+) -> None:
+    fqn_to_class, fqn_to_file = _build_java_fqn_index(parse_results, root)
+    for fr in parse_results:
+        for se in fr.structural_edges:
+            is_ref = se.relation == rel.REL_REFERENCES
+            if is_ref:
+                if not include_references:
+                    continue
+            else:
+                if not include_structural:
+                    continue
+            new_tgt, rw_conf = _rewrite_structural_target(
+                se.target_id, se.relation, fqn_to_class, fqn_to_file
+            )
+            conf = float(min(se.confidence, rw_conf) if new_tgt != se.target_id else se.confidence)
+            src, tgt = se.source_id, new_tgt
+            _ensure_structural_vertex(g, src, fr.language)
+            _ensure_structural_vertex(g, tgt, fr.language)
+            ek = find_edge_key_with_relation(g, src, tgt, se.relation)
+            if ek is not None:
+                cur = float(g[src][tgt][ek].get("confidence", 1.0))
+                g[src][tgt][ek]["confidence"] = min(cur, conf)
+                continue
+            g.add_edge(
+                src,
+                tgt,
+                **edge_payload(
+                    relation=se.relation,
+                    condition=None,
+                    confidence=conf,
+                    type="structural",
+                    labels=[],
+                    async_=False,
+                    unknown_call=False,
+                    recursive=False,
+                    structural_line=se.line,
+                ),
+            )
+
+
+def _canonical_file_id_for_node(nid: str) -> str | None:
+    """Map ``file:``, ``class:path::C``, or symbol ``path::C.m`` to ``file:path``."""
+    if nid.startswith("file:"):
+        return nid
+    if nid.startswith("class:"):
+        rest = nid[6:]
+        if "::" not in rest:
+            return None
+        fp, _c = rest.split("::", 1)
+        return f"file:{fp}" if fp else None
+    if nid.startswith(("external:", "unknown::", "topic:", "ref::")):
+        return None
+    if "::" in nid:
+        fp = nid.split("::", 1)[0]
+        return f"file:{fp}" if fp else None
+    return None
+
+
+def _add_file_level_import_edges(g: CodeflowGraph) -> None:
+    """Add ``file:``→``file:`` IMPORTS edges derived from any IMPORTS edge."""
+    for u, v, _k, d in list(iter_multi_edges(g)):
+        if d.get("relation") != rel.REL_IMPORTS:
+            continue
+        fu = _canonical_file_id_for_node(u)
+        fv = _canonical_file_id_for_node(v)
+        if not fu or not fv or fu == fv:
+            continue
+        lang_u = str(g.nodes[u].get("language") or "mixed")
+        lang_v = str(g.nodes[v].get("language") or lang_u)
+        _ensure_structural_vertex(g, fu, lang_u)
+        _ensure_structural_vertex(g, fv, lang_v)
+        conf = float(d.get("confidence", 1.0))
+        ek_file = None
+        if g.has_edge(fu, fv):
+            for kk, dd in g[fu][fv].items():
+                if dd.get("relation") == rel.REL_IMPORTS and dd.get("file_layer"):
+                    ek_file = kk
+                    break
+        if ek_file is not None:
+            cur = float(g[fu][fv][ek_file].get("confidence", 1.0))
+            g[fu][fv][ek_file]["confidence"] = min(cur, conf)
+            continue
+        g.add_edge(
+            fu,
+            fv,
+            **edge_payload(
+                relation=rel.REL_IMPORTS,
+                condition=None,
+                confidence=conf,
+                type="structural",
+                labels=[],
+                async_=False,
+                unknown_call=False,
+                recursive=False,
+                structural_line=d.get("structural_line"),
+                file_layer=True,
+            ),
+        )
+
+
+def _merge_or_update_call_edge(
+    g: CodeflowGraph,
+    caller_id: str,
+    callee_id: str,
+    *,
+    edge_type: str,
+    cond: str | None,
+    unknown_call: bool,
+    recursive: bool,
+    conf: float,
+    resolution: str,
+    call_async: bool,
+) -> None:
+    ek = find_edge_key_with_relation(g, caller_id, callee_id, rel.REL_CALLS)
+    if ek is not None:
+        ed = g[caller_id][callee_id][ek]
+        labs = list(ed.get("labels") or [])
+        if cond and cond not in labs:
+            labs.append(cond)
+        ed["labels"] = labs
+        if cond:
+            ed["condition"] = cond
+        ed["unknown_call"] = bool(ed.get("unknown_call")) or unknown_call
+        ed["recursive"] = bool(ed.get("recursive")) or recursive
+        ed["confidence"] = min(float(ed.get("confidence", 1.0)), conf)
+        ed["kind"] = rel.REL_CALLS
+        return
+    g.add_edge(
+        caller_id,
+        callee_id,
+        **edge_payload(
+            relation=rel.REL_CALLS,
+            condition=cond,
+            confidence=conf,
+            type=edge_type,
+            resolution=resolution,
+            labels=[cond] if cond else [],
+            async_=call_async,
+            unknown_call=unknown_call,
+            recursive=recursive,
+        ),
+    )
+
+
+def build_graph(
+    parse_results: list[FileParseResult],
+    project_root: Path,
+    *,
+    include_structural: bool = False,
+    include_references: bool = False,
+) -> GraphBuildResult:
+    """Merge file-level parse results into a ``MultiDiGraph`` with node/edge attributes."""
+    g: CodeflowGraph = nx.MultiDiGraph()
     root = project_root.resolve()
 
     for fr in parse_results:
@@ -100,28 +381,43 @@ def build_graph(parse_results: list[FileParseResult], project_root: Path) -> Gra
             cond = call.condition_label
             unknown_call = _edge_unknown_call(call, callee_id)
             recursive = _edge_recursive(call.caller_id, callee_id)
-            if g.has_edge(call.caller_id, callee_id):
-                labs = list(g.edges[call.caller_id, callee_id].get("labels") or [])
-                if cond and cond not in labs:
-                    labs.append(cond)
-                g.edges[call.caller_id, callee_id]["labels"] = labs
-                if cond:
-                    g.edges[call.caller_id, callee_id]["condition"] = cond
-                ed = g.edges[call.caller_id, callee_id]
-                ed["unknown_call"] = bool(ed.get("unknown_call")) or unknown_call
-                ed["recursive"] = bool(ed.get("recursive")) or recursive
-            else:
-                g.add_edge(
-                    call.caller_id,
-                    callee_id,
-                    type=edge_type,
-                    resolution=call.resolution,
-                    condition=cond,
-                    labels=[cond] if cond else [],
-                    async_=call.is_async,
-                    unknown_call=unknown_call,
-                    recursive=recursive,
-                )
+            conf = _call_edge_confidence(call, callee_id)
+            _merge_or_update_call_edge(
+                g,
+                call.caller_id,
+                callee_id,
+                edge_type=edge_type,
+                cond=cond,
+                unknown_call=unknown_call,
+                recursive=recursive,
+                conf=conf,
+                resolution=call.resolution,
+                call_async=call.is_async,
+            )
+
+    _merge_structural_edges(
+        g,
+        parse_results,
+        root,
+        include_structural=include_structural,
+        include_references=include_references,
+    )
+    _add_file_level_import_edges(g)
+
+    if (include_structural or include_references) and _LOG.isEnabledFor(logging.DEBUG):
+        n_call = sum(1 for _, _, _, d in iter_multi_edges(g) if d.get("relation", rel.REL_CALLS) == rel.REL_CALLS)
+        n_imp = sum(1 for _, _, _, d in iter_multi_edges(g) if d.get("relation") == rel.REL_IMPORTS)
+        n_inh = sum(1 for _, _, _, d in iter_multi_edges(g) if d.get("relation") == rel.REL_INHERITS)
+        n_impl = sum(1 for _, _, _, d in iter_multi_edges(g) if d.get("relation") == rel.REL_IMPLEMENTS)
+        _LOG.debug(
+            "graph built: nodes=%s edges=%s CALLS=%s IMPORTS=%s INHERITS=%s IMPLEMENTS=%s",
+            g.number_of_nodes(),
+            g.number_of_edges(),
+            n_call,
+            n_imp,
+            n_inh,
+            n_impl,
+        )
 
     return GraphBuildResult(graph=g, project_root=root)
 
@@ -167,15 +463,16 @@ def _method_tail(cid: str) -> str:
     return tail
 
 
-def graph_to_serializable(g: nx.DiGraph) -> dict:
+def graph_to_serializable(g: CodeflowGraph) -> dict:
     nodes = []
     for n, attr in g.nodes(data=True):
         nodes.append({"id": n, **{k: v for k, v in attr.items() if k != "id"}})
     edges = []
-    for u, v, attr in g.edges(data=True):
-        edges.append({"source": u, "target": v, **attr})
+    for u, v, k, attr in iter_multi_edges(g):
+        row = {"source": u, "target": v, "key": k if k is not None else 0, **attr}
+        edges.append(row)
     return {"nodes": nodes, "edges": edges}
 
 
-def export_node_link_json(g: nx.DiGraph) -> dict:
+def export_node_link_json(g: CodeflowGraph) -> dict:
     return nx.node_link_data(g)

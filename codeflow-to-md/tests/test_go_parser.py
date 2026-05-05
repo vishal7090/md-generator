@@ -20,3 +20,10 @@ func B() {}
     )
     fr = GoParser().parse_file(p, tmp_path)
     assert any("B" in c.callee_hint for c in fr.calls)
+    assert fr.ir_dump is not None
+    assert int(fr.ir_dump.get("irVersion", 0)) >= 1  # type: ignore[arg-type]
+    funcs = fr.ir_dump.get("funcs") or []
+    main_fn = next((f for f in funcs if str(f.get("id", "")).endswith("::A")), None)
+    assert main_fn is not None
+    body = main_fn.get("body") or []
+    assert isinstance(body, list) and len(body) >= 1

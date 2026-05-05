@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdengine"
-version = "0.8.0"
+version = "0.8.1"
 description = "Convert PDF, Office, images, audio, video, text/JSON/XML, ZIP archives, web URLs, databases, graphs, and OpenAPI specs to Markdown."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -115,6 +115,11 @@ codeflow = [
   "networkx>=3.2.0",
   "javalang>=0.13.0",
 ]
+# Optional: horizontal workers for codeflow API (Celery + Redis). Default job path uses threads.
+codeflow-worker = [
+  "celery>=5.3.0",
+  "redis>=5.0.0",
+]
 codeflow-treesitter = [
   "tree-sitter>=0.21.0",
   "tree-sitter-javascript>=0.21.0",
@@ -123,6 +128,12 @@ codeflow-treesitter = [
 ]
 codeflow-clang = [
   "clang>=16.0.0",
+]
+# Embeddings + semantic clustering (SentenceTransformers pulls torch; large install).
+codeflow-semantic = [
+  "numpy>=1.24.0",
+  "scikit-learn>=1.3.0",
+  "sentence-transformers>=3.0.0",
 ]
 api = [
   "fastapi>=0.115.0",

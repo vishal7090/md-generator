@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,59 @@ class AnalyzeOptions(BaseModel):
     business_rules: bool | None = Field(default=None, description="If set, enable/disable business rule MD")
     business_rules_sql: bool | None = Field(default=None, description="If true, scan *.sql for triggers")
     business_rules_combined: bool | None = Field(default=None, description="If set, control entry.combined.md")
+    entry_fallback: Literal["none", "roots", "first_n"] | None = Field(
+        default=None,
+        description="none | roots | first_n when no detected entries",
+    )
+    entry_fallback_max: int | None = None
+    emit_entry_per_method: bool | None = None
+    emit_entry_max: int | None = None
+    emit_entry_filter: str | None = None
+    entries_file: str | None = Field(default=None, description="Path to file of symbol ids (workspace-relative or absolute)")
+    write_scan_summary: bool | None = Field(default=None, description="If false, skip scan-summary.md")
+    liferay_portlet_base_classes: str | None = Field(
+        default=None,
+        description="Comma-separated extra portlet superclass simple names",
+    )
+    codeflow_config_path: str | None = Field(default=None, description="Path to codeflow.yaml")
+    emit_flow_tree_json: bool | None = None
+    verbose: bool | None = None
+    emit_graph_schema: bool | None = None
+    intelligence_list_cap: int | None = None
+    emit_cfg: bool | None = None
+    cfg_max_nodes: int | None = None
+    cfg_inline_calls: bool | None = None
+    cfg_call_depth: int | None = None
+    cfg_max_paths: int | None = None
+    cfg_path_max_depth: int | None = None
+    cfg_loop_visits: int | None = None
+    cfg_probability: bool | None = None
+    cfg_mermaid_probabilities: bool | None = None
+    cfg_runtime_trace: str | None = None
+    cfg_loop_repeat_prob: float | None = None
+    graph_include_structural: bool | None = None
+    intelligence_transitive_callers: bool | None = None
+    emit_system_graph_stats: bool | None = None
+    emit_graph_sqlite: bool | None = None
+    emit_graph_communities: bool | None = None
+    emit_llm_entry_sidecar: bool | None = None
+    include_references: bool | None = None
+    include_events: bool | None = None
+    cfg_ir_go: bool | None = None
+    cfg_ir_php: bool | None = None
+    cfg_ir_cpp: bool | None = None
+    flow_include_event_edges: bool | None = None
+    flow_include_reference_edges: bool | None = None
+    event_impact: bool | None = None
+    cluster_mode: Literal["file_imports", "structural", "semantic", "hybrid"] | None = None
+    graph_query: str | None = None
+    enable_embeddings: bool | None = None
+    embedding_model: str | None = None
+    embedding_max_nodes: int | None = None
+    embedding_k_clusters: int | None = None
+    semantic_top_k: int | None = None
+    semantic_search: str | None = None
+    emit_html_unified: bool | None = None
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -31,6 +84,70 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     br = True if not raw or raw.business_rules is None else raw.business_rules
     br_sql = False if not raw or raw.business_rules_sql is None else raw.business_rules_sql
     br_comb = True if not raw or raw.business_rules_combined is None else raw.business_rules_combined
+    ef = "roots" if not raw or raw.entry_fallback is None else raw.entry_fallback
+    efm = 20 if not raw or raw.entry_fallback_max is None else int(raw.entry_fallback_max)
+    epm = False if not raw or raw.emit_entry_per_method is None else bool(raw.emit_entry_per_method)
+    emx = None if not raw else raw.emit_entry_max
+    efilt = None if not raw else raw.emit_entry_filter
+    efpath = None
+    if raw and raw.entries_file:
+        efpath = Path(raw.entries_file)
+        if not efpath.is_absolute():
+            efpath = (workspace_src / efpath).resolve()
+        else:
+            efpath = efpath.resolve()
+    wss = True if not raw or raw.write_scan_summary is None else bool(raw.write_scan_summary)
+    lpbc: tuple[str, ...] = ()
+    if raw and raw.liferay_portlet_base_classes and str(raw.liferay_portlet_base_classes).strip():
+        lpbc = tuple(x.strip() for x in str(raw.liferay_portlet_base_classes).split(",") if x.strip())
+    ccpath = None
+    if raw and raw.codeflow_config_path and str(raw.codeflow_config_path).strip():
+        p = Path(raw.codeflow_config_path.strip())
+        ccpath = p if p.is_absolute() else (workspace_src / p).resolve()
+    eftj = False if not raw or raw.emit_flow_tree_json is None else bool(raw.emit_flow_tree_json)
+    verb = False if not raw or raw.verbose is None else bool(raw.verbose)
+    egs = False if not raw or raw.emit_graph_schema is None else bool(raw.emit_graph_schema)
+    ilc = 80 if not raw or raw.intelligence_list_cap is None else int(raw.intelligence_list_cap)
+    ecfg = False if not raw or raw.emit_cfg is None else bool(raw.emit_cfg)
+    cmn = 500 if not raw or raw.cfg_max_nodes is None else int(raw.cfg_max_nodes)
+    cic = False if not raw or raw.cfg_inline_calls is None else bool(raw.cfg_inline_calls)
+    ccd = 3 if not raw or raw.cfg_call_depth is None else int(raw.cfg_call_depth)
+    cmpaths = 100 if not raw or raw.cfg_max_paths is None else int(raw.cfg_max_paths)
+    cpmd = 1000 if not raw or raw.cfg_path_max_depth is None else int(raw.cfg_path_max_depth)
+    clv = 2 if not raw or raw.cfg_loop_visits is None else int(raw.cfg_loop_visits)
+    cprob = False if not raw or raw.cfg_probability is None else bool(raw.cfg_probability)
+    cmmdp = False if not raw or raw.cfg_mermaid_probabilities is None else bool(raw.cfg_mermaid_probabilities)
+    crt = None
+    if raw and raw.cfg_runtime_trace and str(raw.cfg_runtime_trace).strip():
+        crt = Path(str(raw.cfg_runtime_trace).strip())
+        if not crt.is_absolute():
+            crt = (workspace_src / crt).resolve()
+        else:
+            crt = crt.resolve()
+    clrp = 0.6 if not raw or raw.cfg_loop_repeat_prob is None else float(raw.cfg_loop_repeat_prob)
+    gis = False if not raw or raw.graph_include_structural is None else bool(raw.graph_include_structural)
+    itc = False if not raw or raw.intelligence_transitive_callers is None else bool(raw.intelligence_transitive_callers)
+    esgs = False if not raw or raw.emit_system_graph_stats is None else bool(raw.emit_system_graph_stats)
+    egsql = False if not raw or raw.emit_graph_sqlite is None else bool(raw.emit_graph_sqlite)
+    egc = False if not raw or raw.emit_graph_communities is None else bool(raw.emit_graph_communities)
+    ellm = False if not raw or raw.emit_llm_entry_sidecar is None else bool(raw.emit_llm_entry_sidecar)
+    iref = False if not raw or raw.include_references is None else bool(raw.include_references)
+    ievt = False if not raw or raw.include_events is None else bool(raw.include_events)
+    cgo = True if not raw or raw.cfg_ir_go is None else bool(raw.cfg_ir_go)
+    cphp = True if not raw or raw.cfg_ir_php is None else bool(raw.cfg_ir_php)
+    ccpp = True if not raw or raw.cfg_ir_cpp is None else bool(raw.cfg_ir_cpp)
+    fie = False if not raw or raw.flow_include_event_edges is None else bool(raw.flow_include_event_edges)
+    fir = False if not raw or raw.flow_include_reference_edges is None else bool(raw.flow_include_reference_edges)
+    eimp = False if not raw or raw.event_impact is None else bool(raw.event_impact)
+    cm = "file_imports" if not raw or raw.cluster_mode is None else raw.cluster_mode
+    gq = None if not raw or raw.graph_query is None or not str(raw.graph_query).strip() else str(raw.graph_query).strip()
+    eemb = False if not raw or raw.enable_embeddings is None else bool(raw.enable_embeddings)
+    emod = "all-MiniLM-L6-v2" if not raw or raw.embedding_model is None else str(raw.embedding_model)
+    emax = 5000 if not raw or raw.embedding_max_nodes is None else int(raw.embedding_max_nodes)
+    ekc = 8 if not raw or raw.embedding_k_clusters is None else int(raw.embedding_k_clusters)
+    stk = 10 if not raw or raw.semantic_top_k is None else int(raw.semantic_top_k)
+    ssr = None if not raw or raw.semantic_search is None or not str(raw.semantic_search).strip() else str(raw.semantic_search).strip()
+    ehu = False if not raw or raw.emit_html_unified is None else bool(raw.emit_html_unified)
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -43,6 +160,53 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         business_rules=br,
         business_rules_sql=br_sql,
         business_rules_combined=br_comb,
+        entry_fallback=ef,  # type: ignore[arg-type]
+        entry_fallback_max=efm,
+        emit_entry_per_method=epm,
+        emit_entry_max=emx,
+        emit_entry_filter=efilt,
+        entries_file=efpath,
+        write_scan_summary=wss,
+        liferay_portlet_base_classes=lpbc,
+        codeflow_config_path=ccpath,
+        emit_flow_tree_json=eftj,
+        verbose=verb,
+        emit_graph_schema=egs,
+        intelligence_list_cap=ilc,
+        emit_cfg=ecfg,
+        cfg_max_nodes=cmn,
+        cfg_inline_calls=cic,
+        cfg_call_depth=ccd,
+        cfg_max_paths=cmpaths,
+        cfg_path_max_depth=cpmd,
+        cfg_loop_visits=clv,
+        cfg_probability=cprob,
+        cfg_mermaid_probabilities=cmmdp,
+        cfg_runtime_trace=crt,
+        cfg_loop_repeat_prob=clrp,
+        graph_include_structural=gis,
+        include_references=iref,
+        include_events=ievt,
+        cfg_ir_go=cgo,
+        cfg_ir_php=cphp,
+        cfg_ir_cpp=ccpp,
+        flow_include_event_edges=fie,
+        flow_include_reference_edges=fir,
+        event_impact=eimp,
+        cluster_mode=cm,  # type: ignore[arg-type]
+        graph_query=gq,
+        enable_embeddings=eemb,
+        embedding_model=emod,
+        embedding_max_nodes=emax,
+        embedding_k_clusters=ekc,
+        semantic_top_k=stk,
+        semantic_search=ssr,
+        emit_html_unified=ehu,
+        intelligence_transitive_callers=itc,
+        emit_system_graph_stats=esgs,
+        emit_graph_sqlite=egsql,
+        emit_graph_communities=egc,
+        emit_llm_entry_sidecar=ellm,
     )
 
 
@@ -71,6 +235,53 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "business_rules": cfg.business_rules,
         "business_rules_sql": cfg.business_rules_sql,
         "business_rules_combined": cfg.business_rules_combined,
+        "entry_fallback": cfg.entry_fallback,
+        "entry_fallback_max": cfg.entry_fallback_max,
+        "emit_entry_per_method": cfg.emit_entry_per_method,
+        "emit_entry_max": cfg.emit_entry_max,
+        "emit_entry_filter": cfg.emit_entry_filter,
+        "entries_file": str(cfg.entries_file) if cfg.entries_file else None,
+        "write_scan_summary": cfg.write_scan_summary,
+        "liferay_portlet_base_classes": list(cfg.liferay_portlet_base_classes),
+        "codeflow_config_path": str(cfg.codeflow_config_path) if cfg.codeflow_config_path else None,
+        "emit_flow_tree_json": cfg.emit_flow_tree_json,
+        "verbose": cfg.verbose,
+        "emit_graph_schema": cfg.emit_graph_schema,
+        "intelligence_list_cap": cfg.intelligence_list_cap,
+        "emit_cfg": cfg.emit_cfg,
+        "cfg_max_nodes": cfg.cfg_max_nodes,
+        "cfg_inline_calls": cfg.cfg_inline_calls,
+        "cfg_call_depth": cfg.cfg_call_depth,
+        "cfg_max_paths": cfg.cfg_max_paths,
+        "cfg_path_max_depth": cfg.cfg_path_max_depth,
+        "cfg_loop_visits": cfg.cfg_loop_visits,
+        "cfg_probability": cfg.cfg_probability,
+        "cfg_mermaid_probabilities": cfg.cfg_mermaid_probabilities,
+        "cfg_runtime_trace": str(cfg.cfg_runtime_trace) if cfg.cfg_runtime_trace else None,
+        "cfg_loop_repeat_prob": cfg.cfg_loop_repeat_prob,
+        "graph_include_structural": cfg.graph_include_structural,
+        "intelligence_transitive_callers": cfg.intelligence_transitive_callers,
+        "emit_system_graph_stats": cfg.emit_system_graph_stats,
+        "emit_graph_sqlite": cfg.emit_graph_sqlite,
+        "emit_graph_communities": cfg.emit_graph_communities,
+        "emit_llm_entry_sidecar": cfg.emit_llm_entry_sidecar,
+        "include_references": cfg.include_references,
+        "include_events": cfg.include_events,
+        "cfg_ir_go": cfg.cfg_ir_go,
+        "cfg_ir_php": cfg.cfg_ir_php,
+        "cfg_ir_cpp": cfg.cfg_ir_cpp,
+        "flow_include_event_edges": cfg.flow_include_event_edges,
+        "flow_include_reference_edges": cfg.flow_include_reference_edges,
+        "event_impact": cfg.event_impact,
+        "cluster_mode": cfg.cluster_mode,
+        "graph_query": cfg.graph_query,
+        "enable_embeddings": cfg.enable_embeddings,
+        "embedding_model": cfg.embedding_model,
+        "embedding_max_nodes": cfg.embedding_max_nodes,
+        "embedding_k_clusters": cfg.embedding_k_clusters,
+        "semantic_top_k": cfg.semantic_top_k,
+        "semantic_search": cfg.semantic_search,
+        "emit_html_unified": cfg.emit_html_unified,
     }
 
 
@@ -93,4 +304,61 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         business_rules=bool(data.get("business_rules", True)),
         business_rules_sql=bool(data.get("business_rules_sql", False)),
         business_rules_combined=bool(data.get("business_rules_combined", True)),
+        entry_fallback=data.get("entry_fallback", "roots"),  # type: ignore[arg-type]
+        entry_fallback_max=int(data.get("entry_fallback_max", 20)),
+        emit_entry_per_method=bool(data.get("emit_entry_per_method", False)),
+        emit_entry_max=data.get("emit_entry_max"),
+        emit_entry_filter=data.get("emit_entry_filter"),
+        entries_file=Path(data["entries_file"]) if data.get("entries_file") else None,
+        write_scan_summary=bool(data.get("write_scan_summary", True)),
+        liferay_portlet_base_classes=_load_liferay_bases(data.get("liferay_portlet_base_classes")),
+        codeflow_config_path=Path(data["codeflow_config_path"]) if data.get("codeflow_config_path") else None,
+        emit_flow_tree_json=bool(data.get("emit_flow_tree_json", False)),
+        verbose=bool(data.get("verbose", False)),
+        emit_graph_schema=bool(data.get("emit_graph_schema", False)),
+        intelligence_list_cap=int(data.get("intelligence_list_cap", 80)),
+        emit_cfg=bool(data.get("emit_cfg", False)),
+        cfg_max_nodes=int(data.get("cfg_max_nodes", 500)),
+        cfg_inline_calls=bool(data.get("cfg_inline_calls", False)),
+        cfg_call_depth=int(data.get("cfg_call_depth", 3)),
+        cfg_max_paths=int(data.get("cfg_max_paths", 100)),
+        cfg_path_max_depth=int(data.get("cfg_path_max_depth", 1000)),
+        cfg_loop_visits=int(data.get("cfg_loop_visits", 2)),
+        cfg_probability=bool(data.get("cfg_probability", False)),
+        cfg_mermaid_probabilities=bool(data.get("cfg_mermaid_probabilities", False)),
+        cfg_runtime_trace=Path(data["cfg_runtime_trace"]) if data.get("cfg_runtime_trace") else None,
+        cfg_loop_repeat_prob=float(data.get("cfg_loop_repeat_prob", 0.6)),
+        graph_include_structural=bool(data.get("graph_include_structural", False)),
+        intelligence_transitive_callers=bool(data.get("intelligence_transitive_callers", False)),
+        emit_system_graph_stats=bool(data.get("emit_system_graph_stats", False)),
+        emit_graph_sqlite=bool(data.get("emit_graph_sqlite", False)),
+        emit_graph_communities=bool(data.get("emit_graph_communities", False)),
+        emit_llm_entry_sidecar=bool(data.get("emit_llm_entry_sidecar", False)),
+        include_references=bool(data.get("include_references", False)),
+        include_events=bool(data.get("include_events", False)),
+        cfg_ir_go=bool(data.get("cfg_ir_go", True)),
+        cfg_ir_php=bool(data.get("cfg_ir_php", True)),
+        cfg_ir_cpp=bool(data.get("cfg_ir_cpp", True)),
+        flow_include_event_edges=bool(data.get("flow_include_event_edges", False)),
+        flow_include_reference_edges=bool(data.get("flow_include_reference_edges", False)),
+        event_impact=bool(data.get("event_impact", False)),
+        cluster_mode=data.get("cluster_mode", "file_imports"),  # type: ignore[arg-type]
+        graph_query=data.get("graph_query"),
+        enable_embeddings=bool(data.get("enable_embeddings", False)),
+        embedding_model=str(data.get("embedding_model", "all-MiniLM-L6-v2")),
+        embedding_max_nodes=int(data.get("embedding_max_nodes", 5000)),
+        embedding_k_clusters=int(data.get("embedding_k_clusters", 8)),
+        semantic_top_k=int(data.get("semantic_top_k", 10)),
+        semantic_search=data.get("semantic_search"),
+        emit_html_unified=bool(data.get("emit_html_unified", False)),
     )
+
+
+def _load_liferay_bases(raw: object) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if isinstance(raw, list):
+        return tuple(str(x).strip() for x in raw if str(x).strip())
+    if isinstance(raw, str):
+        return tuple(x.strip() for x in raw.split(",") if x.strip())
+    return ()

@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from md_generator.codeflow.analyzers.flow_analyzer import slice_from_entry
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, unique_predecessor_count
 from md_generator.codeflow.detectors.entry_detector import apply_entry_detectors, resolve_entry_symbol_ids
 from md_generator.codeflow.detectors.entry_rank import sort_entry_ids
 from md_generator.codeflow.graph.builder import GraphBuildResult, build_graph, graph_to_serializable
+from md_generator.codeflow.graph.clustering import communities_for_mode, file_cluster_labels
+from md_generator.codeflow.graph.event_graph import apply_event_edges
+from md_generator.codeflow.graph.query_engine import execute_query
+from md_generator.codeflow.graph.export_schema import to_stable_schema
+from md_generator.codeflow.generators.flow_tree import flow_tree_to_serializable
 from md_generator.codeflow.generators.html import write_html_bundle
 from md_generator.codeflow.generators.business_rules_markdown import (
     write_business_rules_markdown,
@@ -27,10 +36,217 @@ from md_generator.codeflow.generators.mermaid import write_flow_mermaid
 from md_generator.codeflow.generators.sequence import write_sequence_mermaid
 from md_generator.codeflow.ingestion.loader import LoadedWorkspace, collect_source_files
 from md_generator.codeflow.lang_dispatch import lang_for_path, normalize_language_filter, should_parse_file_lang
-from md_generator.codeflow.models.ir import FileParseResult
-from md_generator.codeflow.rules.collector import collect_business_rules
+from md_generator.codeflow.models.ir import EntryRecord, FileParseResult
 from md_generator.codeflow.parsers.base import ParserRegistry, register_defaults
+from md_generator.codeflow.parsers.ir_enrich import enrich_parse_results_with_ir
 from md_generator.codeflow.core.run_config import ScanConfig
+from md_generator.codeflow.models.ir_cfg import IRMethod
+
+
+def _read_entries_file(path: Path) -> list[str]:
+    out: list[str] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        out.append(s)
+    return out
+
+
+def _method_symbols_for_emit(g: CodeflowGraph, max_n: int, filter_re: str | None) -> list[str]:
+    pat = re.compile(filter_re) if filter_re else None
+    cand: list[str] = []
+    for n, d in g.nodes(data=True):
+        if not isinstance(n, str) or "::" not in n:
+            continue
+        if n.startswith("unknown::"):
+            continue
+        if d.get("type") not in ("method", "entry"):
+            continue
+        if pat and not pat.search(n):
+            continue
+        cand.append(n)
+    cand = sorted(set(cand))
+    return cand[:max_n]
+
+
+def _root_symbol_ids(g: CodeflowGraph, max_n: int) -> list[str]:
+    roots: list[str] = []
+    for n in g.nodes():
+        if not isinstance(n, str) or "::" not in n:
+            continue
+        if n.startswith("unknown::"):
+            continue
+        if unique_predecessor_count(g, n) != 0:
+            continue
+        d = g.nodes[n]
+        if d.get("type") not in ("method", "entry"):
+            continue
+        roots.append(n)
+    return sorted(roots)[:max_n]
+
+
+def _first_n_graph_symbol_ids(g: CodeflowGraph, max_n: int) -> list[str]:
+    ids = sorted(
+        n for n in g.nodes() if isinstance(n, str) and "::" in n and not n.startswith("unknown::")
+    )
+    return ids[:max_n]
+
+
+def _resolve_scan_entry_ids(cfg: ScanConfig, g: CodeflowGraph, all_entries: list[EntryRecord]) -> tuple[list[str], list[str]]:
+    warnings: list[str] = []
+
+    if cfg.entry:
+        ids = [e for e in cfg.entry if e in g]
+        missing = [e for e in cfg.entry if e not in g]
+        if missing:
+            warnings.append(
+                f"{len(missing)} explicit entry symbol(s) not found in graph (showing up to 5): {missing[:5]}",
+            )
+        if ids:
+            return ids, warnings
+        warnings.append("No explicit entry symbols resolved in graph; trying other strategies.")
+
+    if cfg.entries_file:
+        raw = _read_entries_file(cfg.entries_file.resolve())
+        ids = [x for x in raw if x in g]
+        missing = [x for x in raw if x not in g]
+        if missing:
+            warnings.append(
+                f"{len(missing)} entries_file symbol(s) not in graph (showing up to 5): {missing[:5]}",
+            )
+        if ids:
+            return ids, warnings
+        warnings.append("entries_file produced no symbols present in graph; trying other strategies.")
+
+    if cfg.emit_entry_per_method:
+        cap = cfg.emit_entry_max if cfg.emit_entry_max is not None else 10_000
+        ids = _method_symbols_for_emit(g, cap, cfg.emit_entry_filter)
+        if len(ids) >= cap:
+            warnings.append(f"emit_entry_per_method capped at {cap} symbols (emit_entry_max).")
+        if not ids:
+            warnings.append("emit_entry_per_method produced no method symbols in graph.")
+        return ids, warnings
+
+    entry_ids = resolve_entry_symbol_ids(None, all_entries)
+    entry_ids = [e for e in entry_ids if e in g]
+    if entry_ids:
+        return entry_ids, warnings
+
+    entry_ids = [n for n, d in g.nodes(data=True) if d.get("type") == "entry" and n in g]
+    if entry_ids:
+        return entry_ids, warnings
+
+    if cfg.entry_fallback == "none":
+        warnings.append(
+            "No entry symbols after detection (entry_fallback=none). No per-entry output directories.",
+        )
+        return [], warnings
+
+    if cfg.entry_fallback == "roots":
+        entry_ids = _root_symbol_ids(g, cfg.entry_fallback_max)
+        if entry_ids:
+            warnings.append(
+                "No detected entries; used entry_fallback=roots (in-degree 0 symbols). Prefer --entry or --entries-file.",
+            )
+        else:
+            warnings.append(
+                "entry_fallback=roots found no suitable roots; set --entry, --entries-file, or entry_fallback=first_n.",
+            )
+        return entry_ids, warnings
+
+    entry_ids = _first_n_graph_symbol_ids(g, cfg.entry_fallback_max)
+    if entry_ids:
+        warnings.append(
+            "No detected entries; used entry_fallback=first_n (lexicographic). Prefer --entry or --entries-file.",
+        )
+    return entry_ids, warnings
+
+
+def _write_scan_summary(
+    path: Path,
+    *,
+    project_root: Path,
+    parse_count: int,
+    g: CodeflowGraph,
+    entry_ids: list[str],
+    emitted_slugs: int,
+    warnings: list[str],
+    cfg: ScanConfig,
+) -> None:
+    lines = [
+        "# Scan summary",
+        "",
+        f"- **Project root:** `{project_root.resolve().as_posix()}`",
+        f"- **Files parsed:** {parse_count}",
+        f"- **Graph nodes:** {g.number_of_nodes()}",
+        f"- **Graph edges:** {g.number_of_edges()}",
+        f"- **Resolved entry ids:** {len(entry_ids)}",
+        f"- **Output slugs emitted:** {emitted_slugs}",
+        f"- **entry_fallback:** `{cfg.entry_fallback}`",
+        f"- **emit_entry_per_method:** {cfg.emit_entry_per_method}",
+    ]
+    if cfg.emit_entry_per_method:
+        lines.append(
+            "- **Per-entry output:** nested under `methods/<slug>/` when using per-method mode",
+        )
+    lines += [
+        f"- **emit_graph_schema:** {cfg.emit_graph_schema}",
+        f"- **intelligence_list_cap:** {cfg.intelligence_list_cap}",
+        f"- **emit_cfg:** {cfg.emit_cfg}",
+        f"- **cfg_max_nodes:** {cfg.cfg_max_nodes}",
+        f"- **cfg_inline_calls:** {cfg.cfg_inline_calls}",
+        f"- **cfg_call_depth:** {cfg.cfg_call_depth}",
+        f"- **cfg_max_paths:** {cfg.cfg_max_paths}",
+        f"- **cfg_path_max_depth:** {cfg.cfg_path_max_depth}",
+        f"- **cfg_loop_visits:** {cfg.cfg_loop_visits}",
+        f"- **cfg_probability:** {cfg.cfg_probability}",
+        f"- **cfg_mermaid_probabilities:** {cfg.cfg_mermaid_probabilities}",
+        f"- **cfg_runtime_trace:** {str(cfg.cfg_runtime_trace) if cfg.cfg_runtime_trace else 'None'}",
+        f"- **cfg_loop_repeat_prob:** {cfg.cfg_loop_repeat_prob}",
+        f"- **graph_include_structural:** {cfg.graph_include_structural}",
+        f"- **intelligence_transitive_callers:** {cfg.intelligence_transitive_callers}",
+        f"- **emit_system_graph_stats:** {cfg.emit_system_graph_stats}",
+        f"- **emit_graph_sqlite:** {cfg.emit_graph_sqlite}",
+        f"- **emit_graph_communities:** {cfg.emit_graph_communities}",
+        f"- **include_references:** {cfg.include_references}",
+        f"- **include_events:** {cfg.include_events}",
+        f"- **cluster_mode:** `{cfg.cluster_mode}`",
+        f"- **graph_query:** {repr(cfg.graph_query) if cfg.graph_query else 'None'}",
+        f"- **emit_llm_entry_sidecar:** {cfg.emit_llm_entry_sidecar}",
+        f"- **enable_embeddings:** {cfg.enable_embeddings}",
+        f"- **embedding_model:** `{cfg.embedding_model}`",
+        f"- **semantic_top_k:** {cfg.semantic_top_k}",
+        f"- **emit_html_unified:** {cfg.emit_html_unified}",
+        "",
+    ]
+    if warnings:
+        lines.append("## Warnings")
+        lines.append("")
+        for w in warnings:
+            lines.append(f"- {w}")
+        lines.append("")
+    lines.append(
+        "Static graph only: unresolved dynamic calls appear as `unknown::*` nodes. "
+        "Large repos should use `--emit-entry-max` / `entry_fallback_max` to limit output.",
+    )
+    lines.append("")
+    if cfg.enable_embeddings:
+        lines.append(
+            "**Semantic layer:** with `--enable-embeddings` and `mdengine[codeflow-semantic]`, vectors are cached under "
+            "`.codeflow_cache/semantic/`. First model download may require network (`HF_HOME`). "
+            "`semantic-manifest.json`, optional `semantic-search-results.json`, and per-entry `semantic-neighbors.json` "
+            "are written when embeddings succeed.",
+        )
+    else:
+        lines.append(
+            "**Hybrid signals (no embeddings):** per-entry CFG path enumeration when `--emit-cfg` is on; "
+            "Markdown *Called by* / *Impact* use dependency reachability (calls + structural edges; CONTAINS excluded); "
+            "`graph-communities.json` / `graph.db` when those flags are enabled. "
+            "Enable `--enable-embeddings` for local SentenceTransformer similarity and semantic/hybrid clustering.",
+        )
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[FileParseResult]:
@@ -46,37 +262,127 @@ def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[F
         pr = reg.parse_file(p, ws.root, lang)
         if pr:
             results.append(pr)
-    apply_entry_detectors(files, ws.root, results)
+    apply_entry_detectors(files, ws.root, results, cfg)
     return results
 
 
 def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Path:
     """Analyze code under workspace root and write outputs."""
+    if cfg.verbose:
+        import logging
+
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
+        logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
+
     ws = workspace or LoadedWorkspace(root=cfg.project_root.resolve(), cleanup_dir=None)
 
     parse_results = _parse_results_for_workspace(ws, cfg)
-    gb: GraphBuildResult = build_graph(parse_results, ws.root)
+    enrich_parse_results_with_ir(parse_results, cfg, ws.root)
+    gb: GraphBuildResult = build_graph(
+        parse_results,
+        ws.root,
+        include_structural=cfg.graph_include_structural,
+        include_references=cfg.include_references,
+    )
     g = gb.graph
+    if cfg.include_events:
+        apply_event_edges(g, parse_results)
+
+    semantic_artifacts = None
+    scan_semantic_warnings: list[str] = []
+    if cfg.enable_embeddings:
+        try:
+            from md_generator.codeflow.graph.semantic_enricher import attach_semantic_groups, build_semantic_artifacts
+
+            semantic_artifacts = build_semantic_artifacts(
+                g,
+                ws.root,
+                model_id=cfg.embedding_model,
+                max_nodes=cfg.embedding_max_nodes,
+                k_semantic=cfg.embedding_k_clusters,
+            )
+            if semantic_artifacts:
+                attach_semantic_groups(g, semantic_artifacts.labels)
+            else:
+                scan_semantic_warnings.append(
+                    "enable_embeddings: fewer than 2 embeddable method/entry nodes; semantic artifacts skipped.",
+                )
+        except ImportError as e:
+            scan_semantic_warnings.append(
+                f"enable_embeddings requires optional extra mdengine[codeflow-semantic] ({e}).",
+            )
 
     out = cfg.output_path
     out.mkdir(parents=True, exist_ok=True)
 
     all_entries = [e for pr in parse_results for e in pr.entries]
-    entry_ids = resolve_entry_symbol_ids(cfg.entry, all_entries)
+    entry_ids, scan_warnings = _resolve_scan_entry_ids(cfg, g, all_entries)
+    scan_warnings.extend(scan_semantic_warnings)
 
     fmts = {x.strip().lower() for x in cfg.formats}
 
-    entry_ids = [e for e in entry_ids if e in g]
-    if not entry_ids:
-        entry_ids = [n for n, d in g.nodes(data=True) if d.get("type") == "entry" and n in g]
-    if not entry_ids:
-        entry_ids = [n for n in g.nodes()][: min(10, max(1, g.number_of_nodes()))]
+    cluster_by_file: dict[str, int] | None = None
+    comm_payload: list[Any] | None = None
+    comm_algo: str | None = None
+    if cfg.emit_graph_communities or "md" in fmts:
+        sem_labs = None
+        if semantic_artifacts and cfg.cluster_mode in ("semantic", "hybrid"):
+            sem_labs = semantic_artifacts.labels
+        comm_payload, comm_algo = communities_for_mode(
+            g,
+            cfg.cluster_mode,
+            semantic_labels=sem_labs,
+            k_semantic=cfg.embedding_k_clusters,
+        )
+        if comm_payload and "md" in fmts:
+            cluster_by_file = file_cluster_labels(g, comm_payload, cfg.cluster_mode)
+
+    search_hits_list: list[dict[str, Any]] | None = None
+    if semantic_artifacts:
+        (out / "semantic-manifest.json").write_text(
+            json.dumps(
+                {
+                    "model_id": semantic_artifacts.model_id,
+                    "embedded_node_count": len(semantic_artifacts.node_ids),
+                    "k_clusters": cfg.embedding_k_clusters,
+                    "algorithm": "sentence_transformers + sklearn_kmeans + cosine_index",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        q = (cfg.semantic_search or "").strip()
+        if q:
+            from md_generator.codeflow.api.semantic_api import search_similar_serializable
+
+            search_hits_list = search_similar_serializable(
+                semantic_artifacts,
+                q,
+                cfg.semantic_top_k,
+                g,
+            )
+            (out / "semantic-search-results.json").write_text(
+                json.dumps({"query": q, "hits": search_hits_list}, indent=2),
+                encoding="utf-8",
+            )
 
     entry_ids = sort_entry_ids(entry_ids, g, all_entries)
     entry_by_symbol = {e.symbol_id: e for e in all_entries}
+    cluster_mode_note = f"{cfg.cluster_mode} ({comm_algo or 'n/a'})"
 
     include_map = cfg.parsed_include()
     overview_rows: list[tuple[str, str, str, str, str]] = []
+    emitted_slugs = 0
+    entry_base = out / "methods" if cfg.emit_entry_per_method else out
+    if cfg.emit_entry_per_method:
+        entry_base.mkdir(parents=True, exist_ok=True)
+    link_prefix = "methods/" if cfg.emit_entry_per_method else ""
+
+    method_cfgs_for_cfg = None
+    if cfg.emit_cfg:
+        from md_generator.codeflow.graph.call_expander import build_method_cfg_index
+
+        method_cfgs_for_cfg = build_method_cfg_index(parse_results, cfg.cfg_max_nodes)
 
     for eid in entry_ids:
         if include_map:
@@ -84,15 +390,37 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             ek = ndata.get("entry_kind")
             if ek and ek not in include_map:
                 continue
-        sl = slice_from_entry(g, eid, cfg.depth)
+        emitted_slugs += 1
+        sl = slice_from_entry(g, eid, cfg.depth, relations=cfg.flow_slice_relations())
         slug = _slug(eid)
-        sub = out / slug
+        sub = entry_base / slug
         sub.mkdir(parents=True, exist_ok=True)
         rec = entry_by_symbol.get(eid)
+        neighbor_rows: list[dict[str, Any]] | None = None
+        neigh_wrap: dict[str, Any] | None = None
+        if semantic_artifacts:
+            from md_generator.codeflow.api.semantic_api import neighbors_serializable
+
+            neighbor_rows = neighbors_serializable(semantic_artifacts, eid, cfg.semantic_top_k, g)
+            neigh_wrap = {"entry_id": eid, "top_k": neighbor_rows}
+            (sub / "semantic-neighbors.json").write_text(json.dumps(neigh_wrap, indent=2), encoding="utf-8")
+        semantic_search_href: str | None = None
+        if (out / "semantic-search-results.json").is_file():
+            semantic_search_href = os.path.relpath(out / "semantic-search-results.json", sub).replace("\\", "/")
         if "md" in fmts:
-            write_flow_markdown(sub / "flow.md", eid, sl, g)
+            write_flow_markdown(
+                sub / "flow.md",
+                eid,
+                sl,
+                g,
+                list_cap=cfg.intelligence_list_cap,
+                intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                graph_include_structural=cfg.graph_include_structural,
+            )
             rules = None
             if cfg.business_rules:
+                from md_generator.codeflow.rules.collector import collect_business_rules
+
                 rules = collect_business_rules(
                     eid,
                     sl,
@@ -106,7 +434,23 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     rules,
                     entry_hint=eid,
                 )
-                write_entry_markdown(sub / "entry.md", eid, sl, g, rec, rules=rules)
+                write_entry_markdown(
+                    sub / "entry.md",
+                    eid,
+                    sl,
+                    g,
+                    rec,
+                    rules=rules,
+                    intelligence_cap=cfg.intelligence_list_cap,
+                    graph_include_structural=cfg.graph_include_structural,
+                    intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                    include_references=cfg.include_references,
+                    include_events=cfg.include_events,
+                    event_impact_section=cfg.event_impact,
+                    cluster_by_file=cluster_by_file,
+                    enable_embeddings=cfg.enable_embeddings,
+                    semantic_neighbors=neighbor_rows,
+                )
                 if cfg.business_rules_combined:
                     write_combined_entry_markdown(
                         sub / "entry.md",
@@ -114,7 +458,23 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                         sub / "entry.combined.md",
                     )
             else:
-                write_entry_markdown(sub / "entry.md", eid, sl, g, rec, rules=None)
+                write_entry_markdown(
+                    sub / "entry.md",
+                    eid,
+                    sl,
+                    g,
+                    rec,
+                    rules=None,
+                    intelligence_cap=cfg.intelligence_list_cap,
+                    graph_include_structural=cfg.graph_include_structural,
+                    intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                    include_references=cfg.include_references,
+                    include_events=cfg.include_events,
+                    event_impact_section=cfg.event_impact,
+                    cluster_by_file=cluster_by_file,
+                    enable_embeddings=cfg.enable_embeddings,
+                    semantic_neighbors=neighbor_rows,
+                )
             if eid in g:
                 k = rec.kind.value if rec else g.nodes[eid].get("entry_kind")
             else:
@@ -124,10 +484,93 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     slug,
                     type_label_for_kind(k),
                     pretty_start_method(g, eid),
-                    f"[entry](./{slug}/entry.md)",
+                    f"[entry](./{link_prefix}{slug}/entry.md)",
                     one_line_summary(sl, g),
                 ),
             )
+            if cfg.emit_llm_entry_sidecar:
+                from md_generator.codeflow.generators.entry_markdown import write_llm_entry_sidecar
+
+                write_llm_entry_sidecar(sub, eid, emit_cfg=cfg.emit_cfg)
+        if cfg.emit_flow_tree_json:
+            (sub / "flow-tree.json").write_text(
+                json.dumps(flow_tree_to_serializable(eid, sl, g), indent=2),
+                encoding="utf-8",
+            )
+        if cfg.emit_cfg:
+            ir_m = _lookup_ir_method(eid, parse_results)
+            if ir_m is not None:
+                from md_generator.codeflow.graph.call_expander import expand_cfg_calls
+                from md_generator.codeflow.graph.cfg_builder import build_cfg_from_ir
+                from md_generator.codeflow.graph.path_enumerator import PathResult, enumerate_paths, find_cfg_end_id, find_cfg_start_id
+                from md_generator.codeflow.graph.path_probability import PathProbConfig, score_paths
+                from md_generator.codeflow.graph.runtime_integration import apply_runtime_weights
+                from md_generator.codeflow.generators.cfg_paths_markdown import paths_to_markdown
+                from md_generator.codeflow.generators.cfg_render import cfg_to_markdown_section, write_cfg_paths_sidecars, write_cfg_sidecar
+
+                c = build_cfg_from_ir(ir_m, max_nodes=cfg.cfg_max_nodes)
+                c = expand_cfg_calls(
+                    c,
+                    method_cfgs_for_cfg or {},
+                    max_call_depth=cfg.cfg_call_depth,
+                    inline_calls=cfg.cfg_inline_calls,
+                )
+                if cfg.cfg_runtime_trace and cfg.cfg_runtime_trace.is_file():
+                    try:
+                        trace_obj = json.loads(cfg.cfg_runtime_trace.read_text(encoding="utf-8"))
+                        if isinstance(trace_obj, dict):
+                            apply_runtime_weights(c, trace_obj)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                prob_conf = PathProbConfig(loop_repeat=max(0.01, min(0.99, float(cfg.cfg_loop_repeat_prob))))
+                write_cfg_sidecar(
+                    sub,
+                    c,
+                    mermaid_show_probability=cfg.cfg_mermaid_probabilities,
+                    prob_config=prob_conf,
+                )
+                sid = find_cfg_start_id(c)
+                eid_end = find_cfg_end_id(c)
+                path_res = (
+                    enumerate_paths(
+                        c,
+                        sid,
+                        eid_end,
+                        max_paths=cfg.cfg_max_paths,
+                        max_depth=cfg.cfg_path_max_depth,
+                        max_loop_visits=cfg.cfg_loop_visits,
+                    )
+                    if sid and eid_end
+                    else PathResult()
+                )
+                path_probs: list[float] | None = None
+                if cfg.cfg_probability and path_res.paths:
+                    path_probs = [pr for _p, pr in score_paths(c, path_res.paths, prob_conf)]
+                write_cfg_paths_sidecars(
+                    sub,
+                    c,
+                    path_res.paths,
+                    truncated=path_res.truncated,
+                    path_probabilities=path_probs,
+                )
+                if "md" in fmts:
+                    flow_path = sub / "flow.md"
+                    extra = (
+                        cfg_to_markdown_section(
+                            c,
+                            mermaid_show_probability=cfg.cfg_mermaid_probabilities,
+                            prob_config=prob_conf,
+                        )
+                        + "\n"
+                        + paths_to_markdown(
+                            c,
+                            path_res.paths,
+                            c.nodes,
+                            truncated=path_res.truncated,
+                            path_probabilities=path_probs,
+                        )
+                    )
+                    flow_path.write_text(flow_path.read_text(encoding="utf-8") + "\n" + extra, encoding="utf-8")
         if "mermaid" in fmts:
             write_flow_mermaid(sub / "flow.mmd", eid, sl)
             write_sequence_mermaid(sub / "sequence.mmd", eid, sl)
@@ -138,19 +581,81 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         if "html" in fmts:
             sub_g = g.subgraph(sl.nodes).copy()
             write_html_bundle(sub / "index.html", eid, sl, graph_to_serializable(sub_g))
+        if cfg.emit_html_unified:
+            from md_generator.codeflow.generators.html_unified import write_html_unified
+
+            sub_gu = g.subgraph(sl.nodes).copy()
+            slice_json = graph_to_serializable(sub_gu)
+            cfg_mmd_u: str | None = None
+            pm_u = sub / "cfg.mmd"
+            if pm_u.is_file():
+                cfg_mmd_u = pm_u.read_text(encoding="utf-8", errors="replace")
+            write_html_unified(
+                sub,
+                eid,
+                sl,
+                slice_json,
+                cfg_mermaid_text=cfg_mmd_u,
+                semantic_neighbors=neigh_wrap,
+                search_hits=search_hits_list,
+                cluster_mode_note=cluster_mode_note,
+                semantic_search_results_href=semantic_search_href,
+            )
 
     if "json" in fmts:
         full = graph_to_serializable(g)
         (out / "graph-full.json").write_text(json.dumps(full, indent=2), encoding="utf-8")
+        if cfg.emit_graph_schema:
+            sch = to_stable_schema(g)
+            (out / "graph-schema.json").write_text(json.dumps(sch, indent=2), encoding="utf-8")
+        if cfg.emit_graph_communities and comm_payload is not None:
+            body: dict[str, Any] = {
+                "algorithm": comm_algo or "unknown",
+                "layer": cfg.cluster_mode,
+                "communities": comm_payload,
+            }
+            (out / "graph-communities.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
+        if cfg.graph_query and cfg.graph_query.strip():
+            rows = execute_query(g, cfg.graph_query.strip())
+            (out / "query-results.json").write_text(
+                json.dumps({"query": cfg.graph_query.strip(), "rows": rows}, indent=2),
+                encoding="utf-8",
+            )
+    if cfg.emit_graph_sqlite:
+        from md_generator.codeflow.graph.sqlite_export import export_graph_sqlite
+
+        export_graph_sqlite(out / "graph.db", g)
 
     if "md" in fmts and overview_rows:
         write_system_overview(
             out / "system_overview.md",
             overview_rows,
             project_hint=f"Project: `{ws.root.resolve().as_posix()}`",
+            graph=g if cfg.emit_system_graph_stats else None,
+            emit_graph_stats=cfg.emit_system_graph_stats,
+        )
+
+    if cfg.write_scan_summary:
+        _write_scan_summary(
+            out / "scan-summary.md",
+            project_root=ws.root,
+            parse_count=len(parse_results),
+            g=g,
+            entry_ids=entry_ids,
+            emitted_slugs=emitted_slugs,
+            warnings=scan_warnings,
+            cfg=cfg,
         )
 
     return out
+
+
+def _lookup_ir_method(entry_id: str, parse_results: list[FileParseResult]) -> IRMethod | None:
+    for pr in parse_results:
+        for ir in pr.ir_methods:
+            if isinstance(ir, IRMethod) and ir.symbol_id == entry_id:
+                return ir
+    return None
 
 
 def _slug(entry_id: str) -> str:
@@ -160,28 +665,13 @@ def _slug(entry_id: str) -> str:
 
 def build_output_zip(cfg: ScanConfig, workspace_root: Path | None = None) -> bytes:
     """Run scan into a temp dir and return zip bytes (for API)."""
+    from dataclasses import replace
+
     td = Path(tempfile.mkdtemp(prefix="codeflow-scan-"))
     try:
         root = workspace_root or cfg.project_root
         wc = LoadedWorkspace(root=root.resolve(), cleanup_dir=None)
-        cfg2 = ScanConfig(
-            project_root=root.resolve(),
-            paths_override=cfg.paths_override,
-            output_path=td / "out",
-            formats=cfg.formats,
-            depth=cfg.depth,
-            languages=cfg.languages,
-            entry=cfg.entry,
-            include=cfg.include,
-            exclude=cfg.exclude,
-            include_internal=cfg.include_internal,
-            async_mode=cfg.async_mode,
-            jobs=cfg.jobs,
-            runtime=cfg.runtime,
-            business_rules=cfg.business_rules,
-            business_rules_sql=cfg.business_rules_sql,
-            business_rules_combined=cfg.business_rules_combined,
-        )
+        cfg2 = replace(cfg, project_root=root.resolve(), output_path=td / "out")
         run_scan(cfg2, workspace=wc)
         buf = td / "bundle.zip"
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:

@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 
 import networkx as nx
 
+from md_generator.codeflow.graph import relations as rel
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, collapsed_digraph_for_relations
+
 
 @dataclass(slots=True)
 class FlowSlice:
@@ -15,16 +18,25 @@ class FlowSlice:
     truncated: bool = False
 
 
+_DEFAULT_FLOW_RELATIONS = frozenset({rel.REL_CALLS})
+
+
 def walk_with_depth(
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     start: str,
     max_depth: int,
+    *,
+    relations: frozenset[str] | None = None,
 ) -> tuple[set[str], list[tuple[str, str, dict]], set[str], bool]:
-    """Reachability from start within ``max_depth`` hops (shortest-path layering)."""
+    """Reachability from ``start`` within ``max_depth`` hops over selected relations (default: CALLS only)."""
     if start not in g:
         return {start}, [], set(), False
+    rels = relations if relations is not None else _DEFAULT_FLOW_RELATIONS
+    cg = collapsed_digraph_for_relations(g, rels)
+    if start not in cg:
+        return {start}, [], set(), False
     try:
-        plen = nx.single_source_shortest_path_length(g, start, cutoff=max_depth)
+        plen = nx.single_source_shortest_path_length(cg, start, cutoff=max_depth)
     except nx.NetworkXError:
         plen = {start: 0}
 
@@ -36,13 +48,18 @@ def walk_with_depth(
     for u in nodes:
         du = plen[u]
         if du >= max_depth:
-            succ = list(g.successors(u))
+            succ = list(cg.successors(u))
             if succ:
                 truncated = True
             continue
-        for v in g.successors(u):
-            ed = dict(g.edges[u, v])
-            edges_out.append((u, v, ed))
+        for v in cg.successors(u):
+            if not g.has_edge(u, v):
+                continue
+            for _k, ed in g[u][v].items():
+                er = ed.get("relation") or ed.get("kind") or rel.REL_CALLS
+                if er not in rels:
+                    continue
+                edges_out.append((u, v, dict(ed)))
             dv = plen.get(v)
             if dv is not None and dv <= du:
                 cycle_guess.add(v)
@@ -53,11 +70,13 @@ def walk_with_depth(
 
 
 def slice_from_entry(
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     entry_id: str,
     max_depth: int,
+    *,
+    relations: frozenset[str] | None = None,
 ) -> FlowSlice:
-    nodes, edges, cycles, truncated = walk_with_depth(g, entry_id, max_depth)
+    nodes, edges, cycles, truncated = walk_with_depth(g, entry_id, max_depth, relations=relations)
     return FlowSlice(
         entry_id=entry_id,
         nodes=nodes,

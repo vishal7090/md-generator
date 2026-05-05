@@ -3,7 +3,15 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from md_generator.codeflow.models.ir import CallSite, CallResolution, EntryKind, EntryRecord, FileParseResult
+from md_generator.codeflow.graph.relations import REL_REFERENCES
+from md_generator.codeflow.models.ir import (
+    CallSite,
+    CallResolution,
+    EntryKind,
+    EntryRecord,
+    FileParseResult,
+    StructuralEdge,
+)
 
 
 def _rel_key(path: Path, root: Path) -> str:
@@ -141,6 +149,7 @@ class _MethodVisitor:
         self.path = path
         self.class_stack: list[str] = []
         self.branch_stack: list[str | None] = []
+        self._refs_left = 40
 
     def walk_module(self, tree: ast.Module) -> None:
         for node in tree.body:
@@ -165,6 +174,7 @@ class _MethodVisitor:
         if caller not in self.fr.symbol_ids:
             self.fr.symbol_ids.append(caller)
 
+        self._refs_left = 40
         is_async = isinstance(fn, ast.AsyncFunctionDef)
         self._walk_body(fn.body, caller, is_async)
 
@@ -224,7 +234,27 @@ class _MethodVisitor:
             self._visit_class(st)
             return
 
+    def _emit_reference(self, caller: str, expr: ast.Attribute) -> None:
+        if self._refs_left <= 0:
+            return
+        try:
+            hint = ast.unparse(expr).replace(" ", "")[:220]
+        except Exception:
+            hint = f"attr.{expr.attr}"
+        self.fr.structural_edges.append(
+            StructuralEdge(
+                source_id=caller,
+                target_id=f"external::{hint}",
+                relation=REL_REFERENCES,
+                confidence=0.7,
+                line=getattr(expr, "lineno", None),
+            ),
+        )
+        self._refs_left -= 1
+
     def _visit_expr(self, expr: ast.expr, caller: str, is_async_fn: bool) -> None:
+        if isinstance(expr, ast.Attribute):
+            self._emit_reference(caller, expr)
         if isinstance(expr, ast.Call):
             self._visit_call(expr, caller, is_async_fn)
             for a in expr.args:

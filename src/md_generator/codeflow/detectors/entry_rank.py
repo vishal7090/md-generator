@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import networkx as nx
-
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph
 from md_generator.codeflow.models.ir import EntryKind, EntryRecord
 
 
@@ -13,6 +12,7 @@ def entry_kind_rank(kind: str | None) -> int:
         return 90
     order = {
         EntryKind.API_REST.value: 0,
+        EntryKind.PORTLET.value: 0,
         EntryKind.KAFKA.value: 1,
         EntryKind.QUEUE.value: 1,
         EntryKind.SCHEDULER.value: 2,
@@ -25,7 +25,7 @@ def entry_kind_rank(kind: str | None) -> int:
 
 def _kind_for_entry_id(
     entry_id: str,
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     by_symbol: dict[str, EntryRecord],
 ) -> str | None:
     rec = by_symbol.get(entry_id)
@@ -38,7 +38,7 @@ def _kind_for_entry_id(
 
 def sort_entry_ids(
     entry_ids: list[str],
-    g: nx.DiGraph,
+    g: CodeflowGraph,
     all_entries: list[EntryRecord],
 ) -> list[str]:
     """Stable sort: API → event (kafka/queue) → scheduler → main → cli → unknown; tie-break by ``entry_id``."""
