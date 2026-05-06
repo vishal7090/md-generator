@@ -1,4 +1,13 @@
-"""Apply runtime edge counts to CFG ``runtime_prob`` (outgoing normalization per source)."""
+"""Apply runtime edge counts to CFG ``runtime_prob`` (outgoing normalization per source).
+
+**Trace JSON shape** (same as :func:`md_generator.codeflow.graph.hotpath.normalize_runtime_trace`):
+
+- ``{"counts": {"u->v": number, ...}}`` — preferred key; ``edges`` is accepted as an alias in normalization.
+- Each key is a string ``source_cfg_id + "->" + target_cfg_id`` for one directed CFG edge.
+- Values are non-negative frequencies (coerced to ``float``); missing edges get no runtime weight.
+
+Identifiers must match CFG node ids after IR expansion in this project.
+"""
 
 from __future__ import annotations
 

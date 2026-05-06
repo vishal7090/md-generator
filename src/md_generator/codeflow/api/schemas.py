@@ -72,6 +72,21 @@ class AnalyzeOptions(BaseModel):
     semantic_top_k: int | None = None
     semantic_search: str | None = None
     emit_html_unified: bool | None = None
+    nl_query: str | None = None
+    emit_runtime_insights: bool | None = None
+    runtime_insight_frequency_threshold: float | None = None
+    runtime_insight_hot_paths_top: int | None = None
+    semantic_outlier_distance_threshold: float | None = None
+    multi_repo: str | None = Field(
+        default=None,
+        description="Comma-separated extra repository roots to merge with workspace (first root is workspace)",
+    )
+    diff_base: str | None = Field(default=None, description="Git ref/SHA for PR diff (with diff_head)")
+    diff_head: str | None = Field(default=None, description="Git ref/SHA for PR diff (with diff_base)")
+    cross_repo_package_hints: str | None = Field(
+        default=None,
+        description='JSON object mapping package prefix to repo label, e.g. {"com.foo":"repo_a"}',
+    )
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -148,6 +163,25 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     stk = 10 if not raw or raw.semantic_top_k is None else int(raw.semantic_top_k)
     ssr = None if not raw or raw.semantic_search is None or not str(raw.semantic_search).strip() else str(raw.semantic_search).strip()
     ehu = False if not raw or raw.emit_html_unified is None else bool(raw.emit_html_unified)
+    nlq = None if not raw or raw.nl_query is None or not str(raw.nl_query).strip() else str(raw.nl_query).strip()
+    eri = False if not raw or raw.emit_runtime_insights is None else bool(raw.emit_runtime_insights)
+    rift = 0.05 if not raw or raw.runtime_insight_frequency_threshold is None else float(raw.runtime_insight_frequency_threshold)
+    riht = 5 if not raw or raw.runtime_insight_hot_paths_top is None else int(raw.runtime_insight_hot_paths_top)
+    sodt = 0.7 if not raw or raw.semantic_outlier_distance_threshold is None else float(raw.semantic_outlier_distance_threshold)
+    multi_roots: tuple[Path, ...] = ()
+    if raw and raw.multi_repo and str(raw.multi_repo).strip():
+        parts = [x.strip() for x in str(raw.multi_repo).split(",") if x.strip()]
+        multi_roots = tuple((workspace_src / p).resolve() if not Path(p).is_absolute() else Path(p).resolve() for p in parts)
+    db = None if not raw or raw.diff_base is None or not str(raw.diff_base).strip() else str(raw.diff_base).strip()
+    dh = None if not raw or raw.diff_head is None or not str(raw.diff_head).strip() else str(raw.diff_head).strip()
+    cr_hints: dict[str, str] | None = None
+    if raw and raw.cross_repo_package_hints and str(raw.cross_repo_package_hints).strip():
+        try:
+            obj = json.loads(str(raw.cross_repo_package_hints).strip())
+            if isinstance(obj, dict):
+                cr_hints = {str(k): str(v) for k, v in obj.items()}
+        except json.JSONDecodeError:
+            cr_hints = None
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -202,11 +236,20 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         semantic_top_k=stk,
         semantic_search=ssr,
         emit_html_unified=ehu,
+        nl_query=nlq,
+        emit_runtime_insights=eri,
+        runtime_insight_frequency_threshold=rift,
+        runtime_insight_hot_paths_top=riht,
+        semantic_outlier_distance_threshold=sodt,
         intelligence_transitive_callers=itc,
         emit_system_graph_stats=esgs,
         emit_graph_sqlite=egsql,
         emit_graph_communities=egc,
         emit_llm_entry_sidecar=ellm,
+        multi_repo_roots=multi_roots,
+        diff_base=db,
+        diff_head=dh,
+        cross_repo_package_hints=cr_hints,
     )
 
 
@@ -282,6 +325,15 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "semantic_top_k": cfg.semantic_top_k,
         "semantic_search": cfg.semantic_search,
         "emit_html_unified": cfg.emit_html_unified,
+        "nl_query": cfg.nl_query,
+        "emit_runtime_insights": cfg.emit_runtime_insights,
+        "runtime_insight_frequency_threshold": cfg.runtime_insight_frequency_threshold,
+        "runtime_insight_hot_paths_top": cfg.runtime_insight_hot_paths_top,
+        "semantic_outlier_distance_threshold": cfg.semantic_outlier_distance_threshold,
+        "multi_repo_roots": [str(p) for p in cfg.multi_repo_roots],
+        "diff_base": cfg.diff_base,
+        "diff_head": cfg.diff_head,
+        "cross_repo_package_hints": dict(cfg.cross_repo_package_hints) if cfg.cross_repo_package_hints else None,
     }
 
 
@@ -351,6 +403,19 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         semantic_top_k=int(data.get("semantic_top_k", 10)),
         semantic_search=data.get("semantic_search"),
         emit_html_unified=bool(data.get("emit_html_unified", False)),
+        nl_query=data.get("nl_query"),
+        emit_runtime_insights=bool(data.get("emit_runtime_insights", False)),
+        runtime_insight_frequency_threshold=float(data.get("runtime_insight_frequency_threshold", 0.05)),
+        runtime_insight_hot_paths_top=int(data.get("runtime_insight_hot_paths_top", 5)),
+        semantic_outlier_distance_threshold=float(data.get("semantic_outlier_distance_threshold", 0.7)),
+        multi_repo_roots=tuple(Path(p) for p in (data.get("multi_repo_roots") or [])),
+        diff_base=data.get("diff_base"),
+        diff_head=data.get("diff_head"),
+        cross_repo_package_hints=(
+            {str(k): str(v) for k, v in data["cross_repo_package_hints"].items()}
+            if isinstance(data.get("cross_repo_package_hints"), dict)
+            else None
+        ),
     )
 
 

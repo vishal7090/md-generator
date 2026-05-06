@@ -92,6 +92,20 @@ class ScanConfig:
     semantic_top_k: int = 10
     semantic_search: str | None = None
     emit_html_unified: bool = False
+    # Natural-language query (rule-based); writes nl-query-results.json at scan root.
+    nl_query: str | None = None
+    # Hot paths + runtime-frequency CFG anomalies (+ optional semantic outliers); needs emit_cfg + cfg_runtime_trace JSON.
+    emit_runtime_insights: bool = False
+    runtime_insight_frequency_threshold: float = 0.05
+    runtime_insight_hot_paths_top: int = 5
+    semantic_outlier_distance_threshold: float = 0.7
+    # Additional repository roots merged into one graph (``project_root`` is first; labels from dir names).
+    multi_repo_roots: tuple[Path, ...] = ()
+    # When set on a git ``project_root``, write ``pr-impact.json`` after the graph is built.
+    diff_base: str | None = None
+    diff_head: str | None = None
+    # Optional package prefix → target repo label; reserved for cross-repo IMPORT linking (currently unused).
+    cross_repo_package_hints: dict[str, str] | None = None
 
     def parsed_include(self) -> set[str] | None:
         if not self.include or not str(self.include).strip():

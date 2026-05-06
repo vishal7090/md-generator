@@ -288,6 +288,9 @@ def write_entry_markdown(
     cluster_by_file: dict[str, int] | None = None,
     enable_embeddings: bool = False,
     semantic_neighbors: list[dict[str, Any]] | None = None,
+    nl_query_href: str | None = None,
+    runtime_insights: dict[str, Any] | None = None,
+    pr_impact_slice: dict[str, Any] | None = None,
 ) -> None:
     lines: list[str] = []
     lines.append("# Execution Flow Documentation")
@@ -310,6 +313,26 @@ def write_entry_markdown(
     lines.append("")
     lines.append(type_label_for_kind(kind))
     lines.append("")
+    if pr_impact_slice:
+        lines.append("## PR impact (git diff)")
+        lines.append("")
+        lines.append(
+            f"- **Base → head:** `{pr_impact_slice.get('base')}` → `{pr_impact_slice.get('head')}`",
+        )
+        lines.append(f"- **Changed files (scan):** {pr_impact_slice.get('changed_files_count', 0)}")
+        lines.append(
+            f"- **Impacted nodes (scan, reachability):** {pr_impact_slice.get('impacted_nodes_count', 0)}",
+        )
+        lines.append(f"- **Seeds in this flow slice:** {pr_impact_slice.get('seeds_in_slice_count', 0)}")
+        ss = pr_impact_slice.get("seed_sample") or []
+        if ss:
+            lines.append("- **Sample seeds in slice:**")
+            for s in ss:
+                lines.append(f"  - `{_md_escape(str(s))}`")
+        lines.append(
+            f"- **Impacted nodes in this slice:** {pr_impact_slice.get('impacted_in_slice_count', 0)}",
+        )
+        lines.append("")
     lines.append("## Flow Description")
     lines.append("")
     lines.extend(format_flow_description(sl, g))
@@ -461,6 +484,56 @@ def write_entry_markdown(
                 else:
                     lines.append(f"- `{_md_escape(nid)}` — {_md_escape(str(lab))}")
             lines.append("")
+
+    if nl_query_href:
+        lines.append("## NL query (scan)")
+        lines.append("")
+        lines.append(f"- Full rule-based result: [`nl-query-results.json`]({_md_escape(nl_query_href)})")
+        lines.append("")
+
+    if runtime_insights:
+        hp = runtime_insights.get("hot_paths") or []
+        meta = runtime_insights.get("hot_paths_meta") or {}
+        if hp:
+            lines.append("## Hot paths (CFG + runtime)")
+            lines.append("")
+            lines.append("*Scores sum runtime trace counts along enumerated CFG paths (see `runtime-insights.json`).*")
+            lines.append("")
+            for i, row in enumerate(hp[:12], 1):
+                nodes = row.get("nodes") or []
+                sc = float(row.get("score") or 0)
+                chain = " → ".join(str(x) for x in nodes[:16])
+                lines.append(f"{i}. score **{sc:.1f}** — `{_md_escape(chain)}`")
+            if meta.get("paths_truncated"):
+                lines.append("- *CFG path enumeration truncated.*")
+            lines.append("")
+        rare = runtime_insights.get("rare_cfg_edges") or []
+        if rare:
+            lines.append("## Anomalies (rare CFG edges)")
+            lines.append("")
+            defn = str(runtime_insights.get("definition") or "").strip()
+            if defn:
+                lines.append(f"*{defn}*")
+                lines.append("")
+            for row in rare[:30]:
+                fr = row.get("frequency")
+                frs = f"{float(fr):.4f}" if isinstance(fr, int | float) else str(fr)
+                lines.append(
+                    f"- `{_md_escape(str(row.get('source')))}`→`{_md_escape(str(row.get('target')))}` — freq {frs}",
+                )
+            lines.append("")
+        outs = runtime_insights.get("semantic_outliers") or []
+        local_o = [x for x in outs if x.get("node_id") in sl.nodes]
+        if local_o:
+            lines.append("## Semantic outliers (in slice)")
+            lines.append("")
+            for x in local_o[:24]:
+                lines.append(
+                    f"- `{_md_escape(str(x.get('node_id')))}` — distance {float(x.get('distance', 0)):.3f}",
+                )
+            lines.append("")
+        lines.append("- Data: [`runtime-insights.json`](runtime-insights.json)")
+        lines.append("")
 
     if entry_id in g:
         d = g.nodes[entry_id]

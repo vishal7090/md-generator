@@ -26,6 +26,9 @@ def write_html_unified(
     search_hits: list[dict[str, Any]] | None,
     cluster_mode_note: str,
     semantic_search_results_href: str | None = None,
+    nl_query_href: str | None = None,
+    runtime_insights: dict[str, Any] | None = None,
+    pr_impact: dict[str, Any] | None = None,
 ) -> None:
     """Write ``index.unified.html`` under ``entry_dir``."""
     payload = _payload(graph_json, entry_id)
@@ -39,6 +42,12 @@ def write_html_unified(
     if semantic_search_results_href:
         sh = html.escape(semantic_search_results_href)
         search_link = f'<a href="{sh}" style="font-size:12px;">search hits</a>'
+    nl_link = ""
+    if nl_query_href:
+        nh = html.escape(nl_query_href)
+        nl_link = f'<a href="{nh}" style="font-size:12px;">nl-query-results.json</a>'
+    ri_json = json.dumps(runtime_insights or {}, ensure_ascii=False)
+    pr_json = json.dumps(pr_impact or {}, ensure_ascii=False)
 
     # Collect semantic_group values present in slice
     groups: set[int] = set()
@@ -50,6 +59,14 @@ def write_html_unified(
             groups.add(sg)
     group_options = "".join(
         f'<option value="{g}">Group {g}</option>' for g in sorted(groups)
+    )
+
+    repos: set[str] = set()
+    for n in graph_json.get("nodes") or []:
+        if isinstance(n, dict) and n.get("repo"):
+            repos.add(str(n["repo"]))
+    repo_options = "".join(
+        f'<option value="{html.escape(r)}">{html.escape(r)}</option>' for r in sorted(repos)
     )
 
     nodes_text = html.escape("\n".join(sorted(sl.nodes)))
@@ -81,9 +98,14 @@ def write_html_unified(
     function buildElements(data) {
       const els = [];
       const HITS = new Set((SEARCH_HITS || []).map((h) => h.node_id));
+      const PR_SEEDS = new Set((PR_IMPACT && PR_IMPACT.seed_nodes) || []);
+      const PR_IMP = new Set((PR_IMPACT && PR_IMPACT.impacted_nodes) || []);
       for (const n of data.nodes || []) {
-        const d = { id: n.id, label: n.cy_label_short || n.id, semantic_group: n.semantic_group };
-        const cls = (n.type === 'entry' ? 'entry ' : '') + (n.unresolved ? 'unresolved ' : '') + (HITS.has(n.id) ? 'hit ' : '');
+        const d = { id: n.id, label: n.cy_label_short || n.id, semantic_group: n.semantic_group, repo: n.repo || '' };
+        let prCls = '';
+        if (PR_SEEDS.size && PR_SEEDS.has(n.id)) prCls = 'pr-seed ';
+        else if (PR_IMP.size && PR_IMP.has(n.id)) prCls = 'pr-impacted ';
+        const cls = (n.type === 'entry' ? 'entry ' : '') + (n.unresolved ? 'unresolved ' : '') + (HITS.has(n.id) ? 'hit ' : '') + prCls;
         const row = nodeById.get(n.id);
         if (row && typeof row.cy_preset_x === 'number') {
           els.push({ data: d, classes: cls.trim(), position: { x: row.cy_preset_x, y: row.cy_preset_y } });
@@ -139,6 +161,9 @@ def write_html_unified(
         { selector: 'node.entry', style: { 'border-width': 2, 'border-color': '#063', 'font-weight': 'bold' } },
         { selector: 'node.unresolved', style: { 'border-color': '#c00' } },
         { selector: 'node.hit', style: { 'border-width': 3, 'border-color': '#f90' } },
+        { selector: 'node.pr-seed', style: { 'border-width': 4, 'border-color': '#06c' } },
+        { selector: 'node.pr-impacted', style: { 'border-width': 2, 'border-color': '#080' } },
+        { selector: 'node.dim-pr', style: { opacity: 0.11, 'text-opacity': 0.14 } },
         {
           selector: 'edge',
           style: {
@@ -174,6 +199,27 @@ def write_html_unified(
         cy.nodes().forEach((n) => {
           const lab = (n.data('label') || n.id() || '').toLowerCase();
           if (!lab.includes(needle)) n.addClass('dim');
+        });
+      });
+    }
+    function applyRepoFilter(cy, repoVal) {
+      cy.batch(() => {
+        cy.nodes().removeClass('dim');
+        if (!repoVal || repoVal === '__all__') return;
+        cy.nodes().forEach((n) => {
+          const r = n.data('repo') || '';
+          if (String(r) !== String(repoVal)) n.addClass('dim');
+        });
+      });
+    }
+    function applyPrDim(cy, on) {
+      cy.batch(() => {
+        cy.nodes().removeClass('dim-pr');
+        if (!on) return;
+        const PR_IMP = new Set((PR_IMPACT && PR_IMPACT.impacted_nodes) || []);
+        if (!PR_IMP.size) return;
+        cy.nodes().forEach((n) => {
+          if (!PR_IMP.has(n.id())) n.addClass('dim-pr');
         });
       });
     }
@@ -216,15 +262,26 @@ def write_html_unified(
       </select>
       <label for="flt">Filter</label>
       <input type="search" id="flt" placeholder="label…" autocomplete="off"/>
+      <label for="repoF">Repo</label>
+      <select id="repoF">
+        <option value="__all__">All</option>
+        {repo_options}
+      </select>
+      <label id="prLab" style="display:none;"><input type="checkbox" id="prHi"/> PR focus</label>
       <a href="entry.md" style="font-size:12px;">entry.md</a>
       <a href="semantic-neighbors.json" style="font-size:12px;">neighbors.json</a>
       {search_link}
+      {nl_link}
     </div>
   </header>
   <main>
     <div id="left">
       <strong>Slice nodes ({len(sl.nodes)})</strong>
       <pre style="max-height:180px;overflow:auto;">{nodes_text}</pre>
+      <strong>Hot paths (CFG+runtime)</strong>
+      <pre id="hotPre" style="max-height:100px;overflow:auto;font-size:10px;"></pre>
+      <strong>Rare CFG edges</strong>
+      <pre id="anoPre" style="max-height:100px;overflow:auto;font-size:10px;"></pre>
       <strong>Similar (embedding)</strong>
       <div id="simList"></div>
     </div>
@@ -240,6 +297,8 @@ def write_html_unified(
     const ENTRY = {entry_json};
     const NEIGHBORS = {neighbors_json};
     const SEARCH_HITS = {search_json};
+    const RUNTIME_INSIGHTS = {ri_json};
+    const PR_IMPACT = {pr_json};
     const MERMAID_TEXT = {json.dumps(mmd_block)};
     const nodeById = new Map((DATA.nodes || []).map((n) => [n.id, n]));
     {js_core}
@@ -271,11 +330,37 @@ def write_html_unified(
       document.getElementById('flt').addEventListener('input', (ev) => {{
         applyTextFilter(cy, ev.target.value);
       }});
+      const repoSel = document.getElementById('repoF');
+      if (repoSel) {{
+        repoSel.addEventListener('change', (ev) => {{
+          applyRepoFilter(cy, ev.target.value);
+        }});
+      }}
+      const prCb = document.getElementById('prHi');
+      const prLab = document.getElementById('prLab');
+      if (prCb && prLab && PR_IMPACT && (PR_IMPACT.impacted_nodes || []).length) {{
+        prLab.style.display = '';
+        prCb.addEventListener('change', () => {{
+          applyPrDim(cy, prCb.checked);
+        }});
+      }}
       cy.on('tap', 'node', (evt) => {{
         const id = evt.target.id();
         cy.nodes().removeClass('hit');
         evt.target.addClass('hit');
       }});
+      const hpEl = document.getElementById('hotPre');
+      if (hpEl && RUNTIME_INSIGHTS && RUNTIME_INSIGHTS.hot_paths && RUNTIME_INSIGHTS.hot_paths.length) {{
+        hpEl.textContent = RUNTIME_INSIGHTS.hot_paths.map((r, i) =>
+          (i + 1) + '. score=' + (r.score || 0) + ' ' + (r.nodes || []).join(' → ')
+        ).join('\\n');
+      }}
+      const apEl = document.getElementById('anoPre');
+      if (apEl && RUNTIME_INSIGHTS && RUNTIME_INSIGHTS.rare_cfg_edges && RUNTIME_INSIGHTS.rare_cfg_edges.length) {{
+        apEl.textContent = RUNTIME_INSIGHTS.rare_cfg_edges.slice(0, 15).map((e) =>
+          e.source + '→' + e.target + ' f=' + (e.frequency !== undefined ? e.frequency : '?')
+        ).join('\\n');
+      }}
     }})();
     {mermaid_init}
   </script>

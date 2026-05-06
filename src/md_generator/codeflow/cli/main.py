@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -325,6 +326,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write index.unified.html per entry (Cytoscape + CFG Mermaid + semantic sidebar)",
     )
     scan.add_argument(
+        "--nl-query",
+        default=None,
+        metavar="TEXT",
+        help="Rule-based NL intent; writes nl-query-results.json (similar/impact/called by/event/…)",
+    )
+    scan.add_argument(
+        "--emit-runtime-insights",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="With --emit-cfg and --cfg-runtime-trace, write runtime-insights.json (hot paths + rare edges)",
+    )
+    scan.add_argument(
+        "--runtime-insight-frequency-threshold",
+        type=float,
+        default=0.05,
+        help="Anomaly if edge count share of total trace mass is below this (default: 0.05)",
+    )
+    scan.add_argument(
+        "--runtime-insight-hot-paths-top",
+        type=int,
+        default=5,
+        help="Number of hottest CFG paths to record (default: 5)",
+    )
+    scan.add_argument(
+        "--semantic-outlier-distance-threshold",
+        type=float,
+        default=0.7,
+        help="With embeddings, flag nodes farther than 1-cosine from cluster centroid (default: 0.7)",
+    )
+    scan.add_argument(
         "--graph-include-structural",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -421,6 +452,31 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Remove all cached Git clones under the codeflow cache dir, then exit (no scan)",
     )
+    scan.add_argument(
+        "--multi-repo",
+        action="append",
+        default=None,
+        metavar="DIR",
+        help="Extra repository root to merge into one graph (repeatable); entries may be comma-separated",
+    )
+    scan.add_argument(
+        "--diff-base",
+        default=None,
+        metavar="REF",
+        help="With --diff-head, run git diff on project root and write pr-impact.json",
+    )
+    scan.add_argument(
+        "--diff-head",
+        default=None,
+        metavar="REF",
+        help="With --diff-base, run git diff on project root and write pr-impact.json",
+    )
+    scan.add_argument(
+        "--cross-repo-hints",
+        default=None,
+        metavar="JSON",
+        help='Optional JSON object package-prefix → repo label (reserved for future cross-repo IMPORT linking)',
+    )
     return p
 
 
@@ -472,6 +528,25 @@ def main(argv: list[str] | None = None) -> int:
             out = Path.cwd() / "codeflow-out"
         entries_file = Path(ns.entries_file).expanduser().resolve() if ns.entries_file else None
         codeflow_cfg = Path(ns.codeflow_config).expanduser().resolve() if ns.codeflow_config else None
+        multi_roots: tuple[Path, ...] = ()
+        if ns.multi_repo:
+            acc: list[Path] = []
+            for chunk in ns.multi_repo:
+                for piece in str(chunk).split(","):
+                    p = piece.strip()
+                    if p:
+                        acc.append(Path(p).expanduser().resolve())
+            multi_roots = tuple(acc)
+        diff_base = str(ns.diff_base).strip() if getattr(ns, "diff_base", None) and str(ns.diff_base).strip() else None
+        diff_head = str(ns.diff_head).strip() if getattr(ns, "diff_head", None) and str(ns.diff_head).strip() else None
+        cr_hints: dict[str, str] | None = None
+        if getattr(ns, "cross_repo_hints", None) and str(ns.cross_repo_hints).strip():
+            try:
+                obj = json.loads(str(ns.cross_repo_hints).strip())
+                if isinstance(obj, dict):
+                    cr_hints = {str(k): str(v) for k, v in obj.items()}
+            except json.JSONDecodeError:
+                cr_hints = None
         cfg = ScanConfig(
             project_root=root,
             paths_override=paths_override,
@@ -526,6 +601,11 @@ def main(argv: list[str] | None = None) -> int:
             semantic_top_k=int(ns.semantic_top_k),
             semantic_search=ns.semantic_search,
             emit_html_unified=bool(ns.emit_html_unified),
+            nl_query=ns.nl_query,
+            emit_runtime_insights=bool(ns.emit_runtime_insights),
+            runtime_insight_frequency_threshold=float(ns.runtime_insight_frequency_threshold),
+            runtime_insight_hot_paths_top=int(ns.runtime_insight_hot_paths_top),
+            semantic_outlier_distance_threshold=float(ns.semantic_outlier_distance_threshold),
             graph_include_structural=bool(ns.graph_include_structural),
             include_references=bool(ns.include_references),
             include_events=bool(ns.include_events),
@@ -536,6 +616,10 @@ def main(argv: list[str] | None = None) -> int:
             emit_graph_sqlite=bool(ns.emit_graph_sqlite),
             emit_graph_communities=bool(ns.emit_graph_communities),
             emit_llm_entry_sidecar=bool(ns.emit_llm_entry_sidecar),
+            multi_repo_roots=multi_roots,
+            diff_base=diff_base,
+            diff_head=diff_head,
+            cross_repo_package_hints=cr_hints,
         )
         run_scan(cfg, workspace=ws)
         print(str(cfg.output_path.resolve()))
