@@ -104,8 +104,23 @@ class ScanConfig:
     # When set on a git ``project_root``, write ``pr-impact.json`` after the graph is built.
     diff_base: str | None = None
     diff_head: str | None = None
-    # Optional package prefix → target repo label; reserved for cross-repo IMPORT linking (currently unused).
+    # Optional package prefix → target repo label for cross-repo IMPORT resolution after multi-repo merge.
     cross_repo_package_hints: dict[str, str] | None = None
+    # When true (with hints + structural deps), resolve ``external::…`` IMPORTS to other repos.
+    resolve_cross_repo: bool = False
+    # Unified cache: TTL for git clone refresh skip; ``cache_clear_mode`` runs once at scan start.
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 0
+    cache_clear_mode: str | None = None  # all | git | semantic | unified
+    # UX alias: treat like ``graph_include_structural`` for dependency/import edges.
+    enable_dependency_graph: bool = False
+    # Parser preference: ``auto`` per language; ``treesitter`` / ``external`` where wired (see unified_parser).
+    parser_mode: Literal["auto", "treesitter", "external"] = "auto"
+    # Cap embedded per-method CFG Mermaid payloads in ``index.unified.html``.
+    ui_cfg_max_methods: int = 25
+
+    def structural_graph_enabled(self) -> bool:
+        return bool(self.graph_include_structural or self.enable_dependency_graph)
 
     def parsed_include(self) -> set[str] | None:
         if not self.include or not str(self.include).strip():

@@ -21,7 +21,17 @@ def _safe_cluster_id(cluster_key: str) -> str:
     return f"__grp__{s}"
 
 
-def enrich_graph_for_views(graph: dict, entry_id: str) -> dict:
+def _cluster_fill_color(cluster_id: int) -> str:
+    h = (int(cluster_id) * 137) % 360
+    return f"hsl({h}, 50%, 82%)"
+
+
+def enrich_graph_for_views(
+    graph: dict,
+    entry_id: str,
+    *,
+    file_cluster_map: dict[str, int] | None = None,
+) -> dict:
     """Return a copy of ``graph`` with ``cy_depth``, preset positions, and compound parent metadata.
 
     Does not mutate the original dict (safe for JSON already written to disk).
@@ -79,6 +89,12 @@ def enrich_graph_for_views(graph: dict, entry_id: str) -> dict:
         ck = _cluster_key(n)
         row["cy_cluster_id"] = cluster_keys[ck]
         row["cy_label_short"] = _short_label(n, nid)
+        fp_norm = str(n.get("file_path") or "").strip().replace("\\", "/")
+        if file_cluster_map and fp_norm and fp_norm in file_cluster_map:
+            cid = int(file_cluster_map[fp_norm])
+            row["cluster_color"] = _cluster_fill_color(cid)
+        else:
+            row["cluster_color"] = None
         nodes_out.append(row)
 
     return {

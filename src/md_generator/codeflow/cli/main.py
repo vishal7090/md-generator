@@ -362,6 +362,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Merge parser structural edges (IMPORTS / INHERITS / …; Java) into the graph (default: off)",
     )
     scan.add_argument(
+        "--enable-dependency-graph",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Alias: enable structural IMPORTS/dependency edges (same merge as --graph-include-structural)",
+    )
+    scan.add_argument(
+        "--parser-mode",
+        choices=("auto", "treesitter", "external"),
+        default="auto",
+        help="C++: treesitter=Tree-sitter only; external=clang only; auto=current fallback",
+    )
+    scan.add_argument(
+        "--ui-cfg-max-methods",
+        type=int,
+        default=25,
+        help="Max methods in flow slice to embed CFG Mermaid in index.unified.html (default: 25)",
+    )
+    scan.add_argument(
+        "--ui",
+        choices=("default", "unified"),
+        default="default",
+        help="unified: write index.unified.html (same as --emit-html-unified)",
+    )
+    scan.add_argument(
         "--intelligence-transitive-callers",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -475,7 +499,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--cross-repo-hints",
         default=None,
         metavar="JSON",
-        help='Optional JSON object package-prefix → repo label (reserved for future cross-repo IMPORT linking)',
+        help='JSON object: package prefix → repo label (used with --resolve-cross-repo after --multi-repo)',
+    )
+    scan.add_argument(
+        "--resolve-cross-repo",
+        action="store_true",
+        default=False,
+        help="Resolve external:: IMPORTS across merged repos using --cross-repo-hints",
+    )
+    scan.add_argument(
+        "--cache-ttl",
+        type=int,
+        default=0,
+        help="If >0, skip git fetch/pull when clone metadata is younger than this many seconds (same branch/commit as last run; 0=off)",
+    )
+    scan.add_argument(
+        "--cache-clear",
+        choices=("all", "git", "semantic", "unified"),
+        default=None,
+        help="Clear caches before scan: git|all wipes global clone cache first; scan also clears project .codeflow_cache for semantic|unified|all",
+    )
+    scan.add_argument(
+        "--no-cache-layer",
+        action="store_true",
+        default=False,
+        help="Disable git TTL skip and omit per-clone cache metadata writes",
     )
     return p
 
@@ -496,6 +544,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     raw = str(ns.path).strip()
+    cm_pre = getattr(ns, "cache_clear", None)
+    if cm_pre and str(cm_pre).strip():
+        mpre = str(cm_pre).strip().lower()
+        if mpre in ("git", "all"):
+            from md_generator.codeflow.core.cache_manager import apply_git_cache_clear
+
+            apply_git_cache_clear()
     if ns.verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
         logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
@@ -510,6 +565,8 @@ def main(argv: list[str] | None = None) -> int:
                 no_cache=bool(ns.no_git_cache),
                 auth_token=ns.git_auth_token,
                 ssh_key_path=ns.git_ssh_key,
+                cache_ttl_seconds=int(getattr(ns, "cache_ttl", 0) or 0),
+                cache_enabled=not bool(getattr(ns, "no_cache_layer", False)),
             )
         except GitLoaderError as e:
             print(str(e), file=sys.stderr)
@@ -600,13 +657,16 @@ def main(argv: list[str] | None = None) -> int:
             embedding_k_clusters=int(ns.embedding_k_clusters),
             semantic_top_k=int(ns.semantic_top_k),
             semantic_search=ns.semantic_search,
-            emit_html_unified=bool(ns.emit_html_unified),
+            emit_html_unified=bool(ns.emit_html_unified) or ns.ui == "unified",
             nl_query=ns.nl_query,
             emit_runtime_insights=bool(ns.emit_runtime_insights),
             runtime_insight_frequency_threshold=float(ns.runtime_insight_frequency_threshold),
             runtime_insight_hot_paths_top=int(ns.runtime_insight_hot_paths_top),
             semantic_outlier_distance_threshold=float(ns.semantic_outlier_distance_threshold),
             graph_include_structural=bool(ns.graph_include_structural),
+            enable_dependency_graph=bool(ns.enable_dependency_graph),
+            parser_mode=ns.parser_mode,
+            ui_cfg_max_methods=int(ns.ui_cfg_max_methods),
             include_references=bool(ns.include_references),
             include_events=bool(ns.include_events),
             cluster_mode=ns.cluster_mode,
@@ -620,6 +680,10 @@ def main(argv: list[str] | None = None) -> int:
             diff_base=diff_base,
             diff_head=diff_head,
             cross_repo_package_hints=cr_hints,
+            resolve_cross_repo=bool(getattr(ns, "resolve_cross_repo", False)),
+            cache_enabled=not bool(getattr(ns, "no_cache_layer", False)),
+            cache_ttl_seconds=int(getattr(ns, "cache_ttl", 0) or 0),
+            cache_clear_mode=getattr(ns, "cache_clear", None),
         )
         run_scan(cfg, workspace=ws)
         print(str(cfg.output_path.resolve()))

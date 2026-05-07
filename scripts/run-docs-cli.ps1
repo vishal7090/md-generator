@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  Convert every supported file under docs/ using only md-* console commands.
+  Convert every supported file under example/ using only md-* console commands.
 
 .DESCRIPTION
-  Writes results under docs/cli-output/<safe-basename>/.
+  Writes results under example/cli-output/<safe-basename>/.
   Requires: pip install -e ".[pdf,word,ppt,xlsx,image,text,archive]" from repo root (plus OCR/Tesseract for md-image if using tess).
 
 .PARAMETER DocsDir
-  Folder to scan (default: <repo>/docs).
+  Folder to scan (default: <repo>/example).
 
 .PARAMETER OutDir
   Parent folder for outputs (default: <DocsDir>/cli-output).
@@ -27,7 +27,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-if (-not $DocsDir) { $DocsDir = Join-Path $RepoRoot "docs" }
+if (-not $DocsDir) { $DocsDir = Join-Path $RepoRoot "example" }
 $DocsDir = (Resolve-Path $DocsDir).Path
 if (-not $OutDir) { $OutDir = Join-Path $DocsDir "cli-output" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null

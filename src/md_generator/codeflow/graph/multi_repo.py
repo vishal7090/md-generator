@@ -54,7 +54,7 @@ def merge_graphs(graphs: Sequence[CodeflowGraph], labels: Sequence[str]) -> Code
             out.add_node(nn, **d)
         for u, v, k, ed in iter_multi_edges(g):
             u2, v2 = prefixed_id(lab, str(u)), prefixed_id(lab, str(v))
-            out.add_edge(u2, v2, key=k, **edge_payload(dict(ed)))
+            out.add_edge(u2, v2, key=k, **edge_payload(**dict(ed)))
     return out
 
 

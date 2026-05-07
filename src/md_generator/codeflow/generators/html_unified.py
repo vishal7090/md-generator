@@ -11,8 +11,16 @@ from md_generator.codeflow.analyzers.flow_analyzer import FlowSlice
 from md_generator.codeflow.generators.cytoscape_enrich import enrich_graph_for_views
 
 
-def _payload(graph_json: dict, entry_id: str) -> str:
-    return json.dumps(enrich_graph_for_views(graph_json, entry_id), ensure_ascii=False)
+def _payload(
+    graph_json: dict,
+    entry_id: str,
+    *,
+    file_cluster_map: dict[str, int] | None = None,
+) -> str:
+    return json.dumps(
+        enrich_graph_for_views(graph_json, entry_id, file_cluster_map=file_cluster_map),
+        ensure_ascii=False,
+    )
 
 
 def write_html_unified(
@@ -29,9 +37,11 @@ def write_html_unified(
     nl_query_href: str | None = None,
     runtime_insights: dict[str, Any] | None = None,
     pr_impact: dict[str, Any] | None = None,
+    cfg_by_symbol: dict[str, Any] | None = None,
+    file_cluster_map: dict[str, int] | None = None,
 ) -> None:
     """Write ``index.unified.html`` under ``entry_dir``."""
-    payload = _payload(graph_json, entry_id)
+    payload = _payload(graph_json, entry_id, file_cluster_map=file_cluster_map)
     title = html.escape(entry_id)
     entry_json = json.dumps(entry_id, ensure_ascii=False)
     neighbors_json = json.dumps(semantic_neighbors or {}, ensure_ascii=False)
@@ -48,6 +58,7 @@ def write_html_unified(
         nl_link = f'<a href="{nh}" style="font-size:12px;">nl-query-results.json</a>'
     ri_json = json.dumps(runtime_insights or {}, ensure_ascii=False)
     pr_json = json.dumps(pr_impact or {}, ensure_ascii=False)
+    cfg_sym_json = json.dumps(cfg_by_symbol or {}, ensure_ascii=False)
 
     # Collect semantic_group values present in slice
     groups: set[int] = set()
@@ -88,6 +99,7 @@ def write_html_unified(
     #simList button { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 4px 6px; font-size: 11px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background: #fff; }
     #simList button:hover { background: #eef6ff; }
     .hit { box-shadow: 0 0 0 3px #f90 !important; }
+    .nbr { box-shadow: 0 0 0 2px #48f !important; }
     """
 
     js_core = r"""
@@ -101,7 +113,7 @@ def write_html_unified(
       const PR_SEEDS = new Set((PR_IMPACT && PR_IMPACT.seed_nodes) || []);
       const PR_IMP = new Set((PR_IMPACT && PR_IMPACT.impacted_nodes) || []);
       for (const n of data.nodes || []) {
-        const d = { id: n.id, label: n.cy_label_short || n.id, semantic_group: n.semantic_group, repo: n.repo || '' };
+        const d = { id: n.id, label: n.cy_label_short || n.id, semantic_group: n.semantic_group, repo: n.repo || '', cluster_color: n.cluster_color || '' };
         let prCls = '';
         if (PR_SEEDS.size && PR_SEEDS.has(n.id)) prCls = 'pr-seed ';
         else if (PR_IMP.size && PR_IMP.has(n.id)) prCls = 'pr-impacted ';
@@ -121,6 +133,8 @@ def write_html_unified(
         let width = 2;
         if (rk === 'EVENT') { lineStyle = 'dashed'; width = 2; }
         else if (rk === 'REFERENCES') { lineStyle = 'dotted'; width = 2; }
+        else if (rk === 'IMPORTS') { lineStyle = 'solid'; width = 1; }
+        else if (rk === 'CROSS_REPO_IMPORT') { lineStyle = 'dashed'; width = 3; }
         const eid = 'e' + (ei++);
         els.push({
           data: {
@@ -152,7 +166,11 @@ def write_html_unified(
             width: 'label',
             height: 'label',
             padding: '8px',
-            'background-color': (ele) => semanticHue(ele.data('semantic_group')),
+            'background-color': (ele) => {
+              const cc = ele.data('cluster_color');
+              if (cc) return cc;
+              return semanticHue(ele.data('semantic_group'));
+            },
             'border-width': 1,
             'border-color': '#888',
           },
@@ -177,7 +195,27 @@ def write_html_unified(
         },
         { selector: 'edge.EVENT', style: { 'line-style': 'dashed' } },
         { selector: 'edge.REFERENCES', style: { 'line-style': 'dotted' } },
+        { selector: 'edge.IMPORTS', style: { width: 1, 'line-color': '#999', 'target-arrow-color': '#999' } },
+        {
+          selector: 'edge.CROSS_REPO_IMPORT',
+          style: {
+            'line-style': 'dashed',
+            width: 3,
+            'line-color': '#085',
+            'target-arrow-color': '#085',
+          },
+        },
       ];
+    }
+    function clearGraphFocus(cy) {
+      cy.nodes().removeClass('nbr');
+    }
+    function highlightGraphFocus(cy, target) {
+      cy.batch(() => {
+        clearGraphFocus(cy);
+        target.addClass('hit');
+        target.closedNeighborhood().nodes().forEach((x) => { if (x.id() !== target.id()) x.addClass('nbr'); });
+      });
     }
     function applySemanticFilter(cy, groupVal) {
       cy.batch(() => {
@@ -225,19 +263,23 @@ def write_html_unified(
     }
     """
 
-    mermaid_script = ""
-    mermaid_init = "/* no cfg mermaid */"
-    if mmd_block:
-        mermaid_script = (
-            '<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>'
-        )
-        mermaid_init = r"""
-    (async function() {
+    mermaid_script = (
+        '<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>'
+    )
+    mermaid_init = r"""
+    window.__renderCfgMermaid = async function(text) {
       const el = document.getElementById('mmd');
-      if (!el || !MERMAID_TEXT || !window.mermaid) return;
-      el.textContent = MERMAID_TEXT;
+      if (!el || !window.mermaid) return;
+      const t = text || '';
+      el.textContent = t;
+      el.removeAttribute('data-processed');
+      try {
+        await mermaid.run({ nodes: [el] });
+      } catch (e) { console.warn('mermaid', e); }
+    };
+    (async function() {
       mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
-      await mermaid.run({ nodes: [el] });
+      await window.__renderCfgMermaid(MERMAID_TEXT);
     })();
     """
 
@@ -254,30 +296,32 @@ def write_html_unified(
   <header>
     <h1>Codeflow unified · {title}</h1>
     <p style="margin:0;font-size:12px;color:#555;">{cluster_esc}</p>
-    <div class="toolbar">
-      <label>Semantic group</label>
-      <select id="grp">
-        <option value="__all__">All</option>
-        {group_options}
-      </select>
-      <label for="flt">Filter</label>
-      <input type="search" id="flt" placeholder="label…" autocomplete="off"/>
-      <label for="repoF">Repo</label>
-      <select id="repoF">
-        <option value="__all__">All</option>
-        {repo_options}
-      </select>
-      <label id="prLab" style="display:none;"><input type="checkbox" id="prHi"/> PR focus</label>
-      <a href="entry.md" style="font-size:12px;">entry.md</a>
-      <a href="semantic-neighbors.json" style="font-size:12px;">neighbors.json</a>
+    <p style="margin:4px 0 0;font-size:12px;">
+      <a href="entry.md">entry.md</a>
+      · <a href="semantic-neighbors.json">neighbors.json</a>
       {search_link}
       {nl_link}
-    </div>
+    </p>
   </header>
   <main>
     <div id="left">
+      <div class="toolbar" style="flex-direction:column;align-items:stretch;margin:0;">
+        <label>Semantic group</label>
+        <select id="grp">
+          <option value="__all__">All</option>
+          {group_options}
+        </select>
+        <label for="flt">Search labels</label>
+        <input type="search" id="flt" placeholder="label…" autocomplete="off"/>
+        <label for="repoF">Repo</label>
+        <select id="repoF">
+          <option value="__all__">All</option>
+          {repo_options}
+        </select>
+        <label id="prLab" style="display:none;margin-top:6px;"><input type="checkbox" id="prHi"/> PR focus</label>
+      </div>
       <strong>Slice nodes ({len(sl.nodes)})</strong>
-      <pre style="max-height:180px;overflow:auto;">{nodes_text}</pre>
+      <pre style="max-height:140px;overflow:auto;">{nodes_text}</pre>
       <strong>Hot paths (CFG+runtime)</strong>
       <pre id="hotPre" style="max-height:100px;overflow:auto;font-size:10px;"></pre>
       <strong>Rare CFG edges</strong>
@@ -289,7 +333,9 @@ def write_html_unified(
     <div id="right">
       <strong>CFG (Mermaid)</strong>
       <div id="mmd" class="mermaid"></div>
-      <p style="color:#666;font-size:11px;">Select a node in the graph to focus. Edge styles: CALLS solid, EVENT dashed, REFERENCES dotted.</p>
+      <strong>Node</strong>
+      <pre id="nodeDetail" style="max-height:120px;overflow:auto;"></pre>
+      <p style="color:#666;font-size:11px;">Tap a node: 1-hop highlight, CFG when embedded. CALLS solid, EVENT dashed, REFERENCES dotted, IMPORTS thin, CROSS_REPO_IMPORT bold dashed.</p>
     </div>
   </main>
   <script>
@@ -299,6 +345,7 @@ def write_html_unified(
     const SEARCH_HITS = {search_json};
     const RUNTIME_INSIGHTS = {ri_json};
     const PR_IMPACT = {pr_json};
+    const CFG_BY_SYMBOL = {cfg_sym_json};
     const MERMAID_TEXT = {json.dumps(mmd_block)};
     const nodeById = new Map((DATA.nodes || []).map((n) => [n.id, n]));
     {js_core}
@@ -344,10 +391,20 @@ def write_html_unified(
           applyPrDim(cy, prCb.checked);
         }});
       }}
-      cy.on('tap', 'node', (evt) => {{
+      cy.on('tap', 'node', async (evt) => {{
         const id = evt.target.id();
         cy.nodes().removeClass('hit');
-        evt.target.addClass('hit');
+        highlightGraphFocus(cy, evt.target);
+        const row = nodeById.get(id) || {{}};
+        const det = document.getElementById('nodeDetail');
+        if (det) {{
+          det.textContent = [id, row.type && ('type: ' + row.type), row.file_path && ('file: ' + row.file_path), row.repo && ('repo: ' + row.repo)].filter(Boolean).join('\\n');
+        }}
+        const pack = (CFG_BY_SYMBOL || {{}})[id];
+        if (window.__renderCfgMermaid) {{
+          if (pack && pack.mermaid) await window.__renderCfgMermaid(pack.mermaid);
+          else await window.__renderCfgMermaid(MERMAID_TEXT);
+        }}
       }});
       const hpEl = document.getElementById('hotPre');
       if (hpEl && RUNTIME_INSIGHTS && RUNTIME_INSIGHTS.hot_paths && RUNTIME_INSIGHTS.hot_paths.length) {{

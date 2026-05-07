@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Convert every supported file under docs/ using only md-* commands.
+# Convert every supported file under example/ using only md-* commands.
 # Usage (from repo root): bash scripts/run-docs-cli.sh
 # Requires: pip install -e ".[pdf,word,ppt,xlsx,image,text,archive]"
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DOCS_DIR="${DOCS_DIR:-$REPO_ROOT/docs}"
+DOCS_DIR="${DOCS_DIR:-$REPO_ROOT/example}"
 OUT_DIR="${OUT_DIR:-$DOCS_DIR/cli-output}"
 IMAGE_ENGINES="${IMAGE_ENGINES:-tess}"
 

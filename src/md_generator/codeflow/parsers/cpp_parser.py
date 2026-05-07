@@ -79,6 +79,20 @@ class CppParser:
             return fr
         return fr
 
+    def parse_treesitter_only(self, path: Path, project_root: Path) -> FileParseResult:
+        """Skip libclang; use Tree-sitter C/C++ only (for ``parser_mode=treesitter``)."""
+        fr = FileParseResult(path=path.resolve(), language=self.language)
+        key = _rel_key(path, project_root)
+        self._parse_treesitter_cpp(path, key, fr)
+        return fr
+
+    def parse_clang_only(self, path: Path, project_root: Path) -> FileParseResult:
+        """Use libclang only, no Tree-sitter fallback (for ``parser_mode=external``)."""
+        fr = FileParseResult(path=path.resolve(), language=self.language)
+        key = _rel_key(path, project_root)
+        self._parse_clang(path, key, fr)
+        return fr
+
     def _parse_clang(self, path: Path, key: str, fr: FileParseResult) -> bool:
         try:
             import clang.cindex as ci  # type: ignore[import-not-found]

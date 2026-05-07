@@ -87,6 +87,17 @@ class AnalyzeOptions(BaseModel):
         default=None,
         description='JSON object mapping package prefix to repo label, e.g. {"com.foo":"repo_a"}',
     )
+    resolve_cross_repo: bool | None = Field(default=None, description="Resolve external:: imports across merged repos (hints JSON)")
+    cache_enabled: bool | None = Field(default=None, description="Enable git TTL metadata and unified cache writes")
+    cache_ttl_seconds: int | None = Field(default=None, description="Git clone refresh skip window in seconds (0=off)")
+    cache_clear_mode: str | None = Field(
+        default=None,
+        description="semantic | unified | all (project cache); git/all also clears global git cache at API boundary if set",
+    )
+    enable_dependency_graph: bool | None = Field(default=None, description="Alias: enable structural IMPORTS/dependency merge")
+    parser_mode: Literal["auto", "treesitter", "external"] | None = None
+    ui_cfg_max_methods: int | None = Field(default=None, description="Max CFG Mermaid payloads embedded in unified HTML")
+    ui: str | None = Field(default=None, description="Set unified to enable emit_html_unified")
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -163,11 +174,18 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     stk = 10 if not raw or raw.semantic_top_k is None else int(raw.semantic_top_k)
     ssr = None if not raw or raw.semantic_search is None or not str(raw.semantic_search).strip() else str(raw.semantic_search).strip()
     ehu = False if not raw or raw.emit_html_unified is None else bool(raw.emit_html_unified)
+    if raw and raw.ui and str(raw.ui).strip().lower() == "unified":
+        ehu = True
     nlq = None if not raw or raw.nl_query is None or not str(raw.nl_query).strip() else str(raw.nl_query).strip()
     eri = False if not raw or raw.emit_runtime_insights is None else bool(raw.emit_runtime_insights)
     rift = 0.05 if not raw or raw.runtime_insight_frequency_threshold is None else float(raw.runtime_insight_frequency_threshold)
     riht = 5 if not raw or raw.runtime_insight_hot_paths_top is None else int(raw.runtime_insight_hot_paths_top)
     sodt = 0.7 if not raw or raw.semantic_outlier_distance_threshold is None else float(raw.semantic_outlier_distance_threshold)
+    edg = False if not raw or raw.enable_dependency_graph is None else bool(raw.enable_dependency_graph)
+    pm: Literal["auto", "treesitter", "external"] = (
+        "auto" if not raw or raw.parser_mode is None else raw.parser_mode  # type: ignore[assignment]
+    )
+    uic = 25 if not raw or raw.ui_cfg_max_methods is None else int(raw.ui_cfg_max_methods)
     multi_roots: tuple[Path, ...] = ()
     if raw and raw.multi_repo and str(raw.multi_repo).strip():
         parts = [x.strip() for x in str(raw.multi_repo).split(",") if x.strip()]
@@ -182,6 +200,10 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
                 cr_hints = {str(k): str(v) for k, v in obj.items()}
         except json.JSONDecodeError:
             cr_hints = None
+    rcr = False if not raw or raw.resolve_cross_repo is None else bool(raw.resolve_cross_repo)
+    c_en = True if not raw or raw.cache_enabled is None else bool(raw.cache_enabled)
+    c_ttl = 0 if not raw or raw.cache_ttl_seconds is None else int(raw.cache_ttl_seconds)
+    c_cm = None if not raw or raw.cache_clear_mode is None else str(raw.cache_clear_mode).strip() or None
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -250,6 +272,13 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         diff_base=db,
         diff_head=dh,
         cross_repo_package_hints=cr_hints,
+        resolve_cross_repo=rcr,
+        cache_enabled=c_en,
+        cache_ttl_seconds=c_ttl,
+        cache_clear_mode=c_cm,
+        enable_dependency_graph=edg,
+        parser_mode=pm,
+        ui_cfg_max_methods=uic,
     )
 
 
@@ -334,6 +363,13 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "diff_base": cfg.diff_base,
         "diff_head": cfg.diff_head,
         "cross_repo_package_hints": dict(cfg.cross_repo_package_hints) if cfg.cross_repo_package_hints else None,
+        "resolve_cross_repo": cfg.resolve_cross_repo,
+        "cache_enabled": cfg.cache_enabled,
+        "cache_ttl_seconds": cfg.cache_ttl_seconds,
+        "cache_clear_mode": cfg.cache_clear_mode,
+        "enable_dependency_graph": cfg.enable_dependency_graph,
+        "parser_mode": cfg.parser_mode,
+        "ui_cfg_max_methods": cfg.ui_cfg_max_methods,
     }
 
 
@@ -416,6 +452,13 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
             if isinstance(data.get("cross_repo_package_hints"), dict)
             else None
         ),
+        resolve_cross_repo=bool(data.get("resolve_cross_repo", False)),
+        cache_enabled=bool(data.get("cache_enabled", True)),
+        cache_ttl_seconds=int(data.get("cache_ttl_seconds", 0)),
+        cache_clear_mode=data.get("cache_clear_mode"),
+        enable_dependency_graph=bool(data.get("enable_dependency_graph", False)),
+        parser_mode=data.get("parser_mode", "auto"),  # type: ignore[arg-type]
+        ui_cfg_max_methods=int(data.get("ui_cfg_max_methods", 25)),
     )
 
 

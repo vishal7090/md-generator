@@ -37,6 +37,7 @@ from md_generator.codeflow.generators.markdown import write_flow_markdown
 from md_generator.codeflow.generators.mermaid import write_flow_mermaid
 from md_generator.codeflow.generators.sequence import write_sequence_mermaid
 from md_generator.codeflow.ingestion.loader import LoadedWorkspace, collect_source_files
+from md_generator.codeflow.parsers.unified_parser import parse_source_file
 from md_generator.codeflow.lang_dispatch import lang_for_path, normalize_language_filter, should_parse_file_lang
 from md_generator.codeflow.models.ir import EntryRecord, FileParseResult
 from md_generator.codeflow.parsers.base import ParserRegistry, register_defaults
@@ -208,6 +209,10 @@ def _write_scan_summary(
         f"- **cfg_runtime_trace:** {str(cfg.cfg_runtime_trace) if cfg.cfg_runtime_trace else 'None'}",
         f"- **cfg_loop_repeat_prob:** {cfg.cfg_loop_repeat_prob}",
         f"- **graph_include_structural:** {cfg.graph_include_structural}",
+        f"- **enable_dependency_graph:** {cfg.enable_dependency_graph}",
+        f"- **structural_graph_enabled:** {cfg.structural_graph_enabled()}",
+        f"- **parser_mode:** `{cfg.parser_mode}`",
+        f"- **ui_cfg_max_methods:** {cfg.ui_cfg_max_methods}",
         f"- **intelligence_transitive_callers:** {cfg.intelligence_transitive_callers}",
         f"- **emit_system_graph_stats:** {cfg.emit_system_graph_stats}",
         f"- **emit_graph_sqlite:** {cfg.emit_graph_sqlite}",
@@ -288,7 +293,7 @@ def _graph_and_parse_for_scan(
         gb: GraphBuildResult = build_graph(
             parse_results,
             ws_main.root,
-            include_structural=cfg.graph_include_structural,
+            include_structural=cfg.structural_graph_enabled(),
             include_references=cfg.include_references,
         )
         g = gb.graph
@@ -311,7 +316,7 @@ def _graph_and_parse_for_scan(
             gb_i = build_graph(
                 pr_i,
                 root,
-                include_structural=cfg.graph_include_structural,
+                include_structural=cfg.structural_graph_enabled(),
                 include_references=cfg.include_references,
             )
             g_i = gb_i.graph
@@ -324,7 +329,12 @@ def _graph_and_parse_for_scan(
             if i > 0:
                 ws_i.close()
     g_m = merge_graphs(graphs, labels)
-    link_cross_repo_imports(g_m, package_hints=cfg.cross_repo_package_hints)
+    if cfg.resolve_cross_repo:
+        from md_generator.codeflow.graph.cross_repo_resolver import resolve_cross_repo_imports
+
+        resolve_cross_repo_imports(g_m, cfg.cross_repo_package_hints)
+    else:
+        link_cross_repo_imports(g_m, package_hints=cfg.cross_repo_package_hints)
     return g_m, all_parse, ws_main, labels[0]
 
 
@@ -338,7 +348,7 @@ def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[F
         lang = lang_for_path(p)
         if not should_parse_file_lang(lang, allowed):
             continue
-        pr = reg.parse_file(p, ws.root, lang)
+        pr = parse_source_file(reg, p, ws.root, lang, cfg.parser_mode)
         if pr:
             results.append(pr)
     apply_entry_detectors(files, ws.root, results, cfg)
@@ -352,6 +362,11 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
 
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
         logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
+
+    if cfg.cache_clear_mode and str(cfg.cache_clear_mode).strip():
+        from md_generator.codeflow.core.cache_manager import apply_project_cache_clear
+
+        apply_project_cache_clear(cfg.project_root.resolve(), str(cfg.cache_clear_mode).strip())
 
     g, parse_results, ws, primary_repo_label = _graph_and_parse_for_scan(cfg, workspace)
 
@@ -547,7 +562,7 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 g,
                 list_cap=cfg.intelligence_list_cap,
                 intelligence_transitive_callers=cfg.intelligence_transitive_callers,
-                graph_include_structural=cfg.graph_include_structural,
+                graph_include_structural=cfg.structural_graph_enabled(),
             )
             if cfg.business_rules:
                 from md_generator.codeflow.rules.collector import collect_business_rules
@@ -691,7 +706,7 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 rec,
                 rules=rules,
                 intelligence_cap=cfg.intelligence_list_cap,
-                graph_include_structural=cfg.graph_include_structural,
+                graph_include_structural=cfg.structural_graph_enabled(),
                 intelligence_transitive_callers=cfg.intelligence_transitive_callers,
                 include_references=cfg.include_references,
                 include_events=cfg.include_events,
@@ -752,6 +767,9 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     "seed_nodes": sorted(pr_seeds & n_sl)[:300],
                     "impacted_nodes": sorted(pr_impacted & n_sl)[:800],
                 }
+            cfg_bundle: dict[str, dict[str, str]] = {}
+            if cfg.emit_cfg and cfg.emit_html_unified:
+                cfg_bundle = _build_cfg_mermaid_bundle_for_slice(set(sl.nodes), parse_results, cfg, method_cfgs_for_cfg)
             write_html_unified(
                 sub,
                 eid,
@@ -765,6 +783,8 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 nl_query_href=nl_query_href,
                 runtime_insights=runtime_insights_payload,
                 pr_impact=pr_html,
+                cfg_by_symbol=cfg_bundle or None,
+                file_cluster_map=cluster_by_file,
             )
 
     if "json" in fmts:
@@ -813,6 +833,47 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             pr_impact=pr_impact_payload,
         )
 
+    return out
+
+
+def _build_cfg_mermaid_bundle_for_slice(
+    slice_nodes: set[str],
+    parse_results: list[FileParseResult],
+    cfg: ScanConfig,
+    method_cfgs_for_cfg: dict[str, Any] | None,
+) -> dict[str, dict[str, str]]:
+    """Precompute Mermaid CFG text per method symbol in the slice (for static unified HTML)."""
+    if not cfg.emit_cfg:
+        return {}
+    from md_generator.codeflow.graph.call_expander import expand_cfg_calls
+    from md_generator.codeflow.graph.cfg_builder import build_cfg_from_ir
+    from md_generator.codeflow.generators.cfg_render import cfg_to_mermaid
+    from md_generator.codeflow.graph.path_probability import PathProbConfig
+
+    out: dict[str, dict[str, str]] = {}
+    prob_conf = PathProbConfig(loop_repeat=max(0.01, min(0.99, float(cfg.cfg_loop_repeat_prob))))
+    n = 0
+    for nid in sorted(slice_nodes, key=str):
+        if n >= cfg.ui_cfg_max_methods:
+            break
+        sid = str(nid)
+        ir_m = _lookup_ir_method(sid, parse_results)
+        if ir_m is None:
+            continue
+        c = build_cfg_from_ir(ir_m, max_nodes=cfg.cfg_max_nodes)
+        c = expand_cfg_calls(
+            c,
+            method_cfgs_for_cfg or {},
+            max_call_depth=cfg.cfg_call_depth,
+            inline_calls=cfg.cfg_inline_calls,
+        )
+        mmd = cfg_to_mermaid(
+            c,
+            show_edge_probability=cfg.cfg_mermaid_probabilities,
+            prob_config=prob_conf,
+        )
+        out[sid] = {"mermaid": mmd}
+        n += 1
     return out
 
 

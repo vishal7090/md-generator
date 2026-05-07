@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 $RepoRoot = "C:\Task\Project\md-generator"
-$BaseOut = Join-Path $RepoRoot "docs\codeflow"
+$BaseOut = Join-Path $RepoRoot "example\codeflow"
 New-Item -ItemType Directory -Force -Path $BaseOut | Out-Null
 $env:PYTHONPATH = Join-Path $RepoRoot "src"
 Set-Location $RepoRoot
