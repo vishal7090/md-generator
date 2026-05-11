@@ -1,0 +1,48 @@
+input:
+  paths: []
+
+parser:
+  preset: generic
+  line_regex: null
+  fuzzy_timestamp: false
+  auto_detect: false
+
+normalization:
+  redact_pii: false
+  normalize_numbers: false
+  normalize_uuid: false
+  normalize_paths: false
+
+aggregation:
+  timeline: hourly
+
+clustering:
+  enabled: false
+  algorithm: kmeans
+  n_clusters: 8
+  random_state: 42
+  max_features: 4096
+
+output:
+  path: ./log-docs
+  split_by_level: true
+  generate_incidents: true
+  generate_clusters: false
+  generate_chunks: false
+
+chunk:
+  enabled: false
+  lines_per_chunk: 100000
+  records_per_md_chunk: 500
+
+execution:
+  workers: 4
+  max_lines_per_file: null
+  encoding_fallbacks:
+    - utf-8
+    - utf-8-sig
+    - latin-1
+    - cp1252
+
+plugins:
+  enrichers: []

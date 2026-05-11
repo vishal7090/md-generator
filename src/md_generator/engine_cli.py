@@ -8,7 +8,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(argv) < 1:
         print(
             "Usage: mdengine ai assist … | mdengine ai export … | mdengine skill build … | mdengine db-to-md … | "
-            "mdengine graph-to-md … | mdengine openapi-to-md generate … | mdengine codeflow-to-md scan …",
+            "mdengine log-to-md … | mdengine graph-to-md … | mdengine openapi-to-md generate … | mdengine codeflow-to-md scan …",
             file=sys.stderr,
         )
         return 2
@@ -41,6 +41,10 @@ def main(argv: list[str] | None = None) -> int:
         from md_generator.db.cli.main import main as db_main
 
         return db_main(argv[1:])
+    if argv[0] == "log-to-md":
+        from md_generator.log.cli.main import main as log_main
+
+        return log_main(argv[1:])
     if argv[0] == "graph-to-md":
         from md_generator.graph.cli.main import main as graph_main
 
@@ -55,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         return cf_main(argv[1:])
     print(
         "Usage: mdengine ai assist … | mdengine ai export … | mdengine skill build … | mdengine db-to-md … | "
-        "mdengine graph-to-md … | mdengine openapi-to-md generate … | mdengine codeflow-to-md scan …",
+        "mdengine log-to-md … | mdengine graph-to-md … | mdengine openapi-to-md generate … | mdengine codeflow-to-md scan …",
         file=sys.stderr,
     )
     return 2
