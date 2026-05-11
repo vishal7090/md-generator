@@ -45,7 +45,7 @@ image-ocr = [
   "paddleocr>=2.7.0.3",
   "easyocr>=1.7.0",
 ]
-text = []
+text = ["xmltodict>=0.13.0", "lxml>=5.0.0"]
 archive = ["Pillow>=10.0.0", "pytesseract>=0.3.10"]
 url = [
   "httpx>=0.27.0",

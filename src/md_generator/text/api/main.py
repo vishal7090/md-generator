@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,6 +87,8 @@ async def convert_sync(
     file: UploadFile = File(...),
     include_source_block: bool = True,
     generate_toc: bool = False,
+    structure: Literal["hierarchical", "flattened"] = "hierarchical",
+    xml_parser: Literal["auto", "stdlib", "lxml"] = "auto",
 ) -> Response:
     settings: ApiSettings = request.app.state.settings
     _validate_upload_name(file.filename)
@@ -100,6 +103,8 @@ async def convert_sync(
     opts = convert_options_from_query(
         include_source_block=include_source_block,
         generate_toc=generate_toc,
+        structure=structure,
+        xml_parser=xml_parser,
     )
     import tempfile
 
@@ -127,6 +132,8 @@ async def convert_jobs(
     file: UploadFile = File(...),
     include_source_block: bool = True,
     generate_toc: bool = False,
+    structure: Literal["hierarchical", "flattened"] = "hierarchical",
+    xml_parser: Literal["auto", "stdlib", "lxml"] = "auto",
 ) -> dict:
     settings: ApiSettings = request.app.state.settings
     store: JobStore = request.app.state.job_store
@@ -136,6 +143,8 @@ async def convert_jobs(
     opts = convert_options_from_query(
         include_source_block=include_source_block,
         generate_toc=generate_toc,
+        structure=structure,
+        xml_parser=xml_parser,
     )
     job = store.create_job()
     assert file.filename is not None

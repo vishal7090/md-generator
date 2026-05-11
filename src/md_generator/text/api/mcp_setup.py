@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from md_generator.text.api.convert_runner import build_artifact_zip_bytes
 from md_generator.text.api.settings import ApiSettings
-from md_generator.text.options import ConvertOptions
+from md_generator.text.options import ConvertOptions, StructureMode, XmlParser
 
 
 def _decode_base64_payload(data: str) -> bytes:
@@ -31,13 +31,17 @@ def build_mcp_stack(*, mount_under_fastapi: bool = False) -> tuple[FastMCP, obje
     settings = ApiSettings()
 
     @mcp.tool()
-    def convert_text_file_to_artifact_zip(file_path: str) -> str:
+    def convert_text_file_to_artifact_zip(
+        file_path: str,
+        structure: StructureMode = "hierarchical",
+        xml_parser: XmlParser = "auto",
+    ) -> str:
         """Convert a local .txt, .json, or .xml path on the server to a temporary artifact.zip path."""
         src = Path(file_path).expanduser().resolve()
         suf = src.suffix.lower()
         if not src.is_file() or suf not in (".txt", ".json", ".xml"):
             raise ValueError("file_path must be an existing .txt, .json, or .xml file")
-        opts = ConvertOptions(artifact_layout=True)
+        opts = ConvertOptions(artifact_layout=True, structure=structure, xml_parser=xml_parser)
         data = build_artifact_zip_bytes(src, opts)
         fd, name = tempfile.mkstemp(suffix=".zip", prefix="txjxml-artifact-")
         import os
@@ -51,6 +55,8 @@ def build_mcp_stack(*, mount_under_fastapi: bool = False) -> tuple[FastMCP, obje
     def convert_text_base64_to_artifact_zip(
         file_base64: str,
         filename: str = "upload.txt",
+        structure: StructureMode = "hierarchical",
+        xml_parser: XmlParser = "auto",
     ) -> str:
         """Decode base64 (optional data:...;base64, prefix) and write artifact.zip path."""
         raw = _decode_base64_payload(file_base64)
@@ -64,7 +70,7 @@ def build_mcp_stack(*, mount_under_fastapi: bool = False) -> tuple[FastMCP, obje
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / safe
             p.write_bytes(raw)
-            opts = ConvertOptions(artifact_layout=True)
+            opts = ConvertOptions(artifact_layout=True, structure=structure, xml_parser=xml_parser)
             data = build_artifact_zip_bytes(p, opts)
         fd, name = tempfile.mkstemp(suffix=".zip", prefix="txjxml-artifact-")
         import os

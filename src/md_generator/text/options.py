@@ -4,6 +4,8 @@ from dataclasses import dataclass, fields, replace
 from typing import Any, Literal
 
 InputFormat = Literal["auto", "txt", "json", "xml"]
+StructureMode = Literal["hierarchical", "flattened"]
+XmlParser = Literal["auto", "stdlib", "lxml"]
 
 
 @dataclass
@@ -16,6 +18,8 @@ class ConvertOptions:
     input_format: InputFormat = "auto"
     include_source_block: bool = True
     generate_toc: bool = False
+    structure: StructureMode = "hierarchical"
+    xml_parser: XmlParser = "auto"
 
     @classmethod
     def field_names(cls) -> set[str]:
