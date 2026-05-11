@@ -31,6 +31,7 @@ def enrich_graph_for_views(
     entry_id: str,
     *,
     file_cluster_map: dict[str, int] | None = None,
+    file_cluster_label_map: dict[str, str] | None = None,
 ) -> dict:
     """Return a copy of ``graph`` with ``cy_depth``, preset positions, and compound parent metadata.
 
@@ -95,6 +96,10 @@ def enrich_graph_for_views(
             row["cluster_color"] = _cluster_fill_color(cid)
         else:
             row["cluster_color"] = None
+        if file_cluster_label_map and fp_norm and fp_norm in file_cluster_label_map:
+            row["cluster_label"] = str(file_cluster_label_map[fp_norm])
+        else:
+            row["cluster_label"] = None
         nodes_out.append(row)
 
     return {

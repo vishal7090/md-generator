@@ -368,6 +368,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Alias: enable structural IMPORTS/dependency edges (same merge as --graph-include-structural)",
     )
     scan.add_argument(
+        "--graph-include-contains-reachability",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Include CONTAINS in dependency reachability (PR impact, Called by, Impact lists)",
+    )
+    scan.add_argument(
         "--parser-mode",
         choices=("auto", "treesitter", "external"),
         default="auto",
@@ -404,10 +410,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write graph.db (SQLite nodes/edges) alongside graph-full.json",
     )
     scan.add_argument(
+        "--graph-sqlite-mode",
+        choices=("full", "incremental"),
+        default="full",
+        help="full replaces graph.db each scan; incremental upserts and appends scan metadata",
+    )
+    scan.add_argument(
+        "--graph-sqlite-prune-missing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="incremental only: delete rows not seen in the latest scan",
+    )
+    scan.add_argument(
         "--emit-graph-communities",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="When json format is on, write graph-communities.json (modularity; mode via --cluster-mode)",
+    )
+    scan.add_argument(
+        "--no-cluster-labels",
+        action="store_true",
+        default=False,
+        help="Disable rule-based community labels (use numeric ids only in Markdown)",
     )
     scan.add_argument(
         "--include-references",
@@ -506,6 +530,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Resolve external:: IMPORTS across merged repos using --cross-repo-hints",
+    )
+    scan.add_argument(
+        "--cross-repo-tsconfig",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="With --resolve-cross-repo, load tsconfig/jsconfig paths per repo for @… modules",
+    )
+    scan.add_argument(
+        "--cross-repo-maven-hints",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="With --resolve-cross-repo, add Maven pom.xml groupId→repo label hints",
     )
     scan.add_argument(
         "--cache-ttl",
@@ -674,13 +710,19 @@ def main(argv: list[str] | None = None) -> int:
             intelligence_transitive_callers=bool(ns.intelligence_transitive_callers),
             emit_system_graph_stats=bool(ns.emit_system_graph_stats),
             emit_graph_sqlite=bool(ns.emit_graph_sqlite),
+            graph_sqlite_mode=str(getattr(ns, "graph_sqlite_mode", "full")),  # type: ignore[arg-type]
+            graph_sqlite_prune_missing=bool(getattr(ns, "graph_sqlite_prune_missing", False)),
             emit_graph_communities=bool(ns.emit_graph_communities),
+            emit_cluster_labels=not bool(getattr(ns, "no_cluster_labels", False)),
             emit_llm_entry_sidecar=bool(ns.emit_llm_entry_sidecar),
             multi_repo_roots=multi_roots,
             diff_base=diff_base,
             diff_head=diff_head,
             cross_repo_package_hints=cr_hints,
             resolve_cross_repo=bool(getattr(ns, "resolve_cross_repo", False)),
+            cross_repo_tsconfig=bool(getattr(ns, "cross_repo_tsconfig", False)),
+            cross_repo_maven_hints=bool(getattr(ns, "cross_repo_maven_hints", False)),
+            graph_include_contains_reachability=bool(getattr(ns, "graph_include_contains_reachability", False)),
             cache_enabled=not bool(getattr(ns, "no_cache_layer", False)),
             cache_ttl_seconds=int(getattr(ns, "cache_ttl", 0) or 0),
             cache_clear_mode=getattr(ns, "cache_clear", None),

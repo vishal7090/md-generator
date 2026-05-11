@@ -14,7 +14,7 @@ from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, iter_out
 if TYPE_CHECKING:
     import numpy as np
 
-_MANIFEST_VERSION = 1
+_MANIFEST_VERSION = 2
 
 
 def _require_numpy() -> Any:
@@ -70,6 +70,27 @@ def build_embedding_text(g: CodeflowGraph, node_id: str, *, max_calls: int = 5) 
 
 def _sha256_text(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _encoder_backend_label() -> str:
+    return "sentence_transformers"
+
+
+def _library_versions() -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        import sentence_transformers as st
+
+        out["sentence_transformers"] = str(getattr(st, "__version__", "unknown"))
+    except ImportError:
+        out["sentence_transformers"] = "not_installed"
+    try:
+        import torch
+
+        out["torch"] = str(getattr(torch, "__version__", "unknown"))
+    except ImportError:
+        out["torch"] = "not_installed"
+    return out
 
 
 _models: dict[str, Any] = {}
@@ -165,6 +186,8 @@ def save_cached_vectors(
         "node_order": node_ids,
         "hashes": hashes,
         "dim": int(np.asarray(vectors).shape[1]) if np.asarray(vectors).ndim == 2 else 0,
+        "encoder_backend": _encoder_backend_label(),
+        "library_versions": _library_versions(),
     }
     (cdir / "manifest.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     np.save(cdir / "vectors.f16.npy", np.asarray(vectors, dtype=np.float16))

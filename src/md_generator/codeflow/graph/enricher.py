@@ -36,12 +36,24 @@ def call_graph_view(g: CodeflowGraph) -> nx.DiGraph:
     return sg
 
 
-def called_by_direct(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
-    return called_by_direct_dependency(g, node_id, cap)
+def called_by_direct(
+    g: CodeflowGraph,
+    node_id: str,
+    cap: int,
+    *,
+    include_contains: bool = False,
+) -> list[str]:
+    return called_by_direct_dependency(g, node_id, cap, include_contains=include_contains)
 
 
-def called_by_transitive(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
-    return called_by_transitive_dependency(g, node_id, cap)
+def called_by_transitive(
+    g: CodeflowGraph,
+    node_id: str,
+    cap: int,
+    *,
+    include_contains: bool = False,
+) -> list[str]:
+    return called_by_transitive_dependency(g, node_id, cap, include_contains=include_contains)
 
 
 def structural_dependency_bullets(g: CodeflowGraph, entry_id: str, cap: int) -> list[str]:
@@ -70,5 +82,11 @@ def structural_dependency_bullets(g: CodeflowGraph, entry_id: str, cap: int) -> 
     return lines[:cap]
 
 
-def impact_descendants(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
-    return impact_descendants_dependency(g, node_id, cap)
+def impact_descendants(
+    g: CodeflowGraph,
+    node_id: str,
+    cap: int,
+    *,
+    include_contains: bool = False,
+) -> list[str]:
+    return impact_descendants_dependency(g, node_id, cap, include_contains=include_contains)

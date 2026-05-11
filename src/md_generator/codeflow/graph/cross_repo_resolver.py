@@ -5,6 +5,7 @@ from __future__ import annotations
 from md_generator.codeflow.graph import relations as rel
 from md_generator.codeflow.graph.dependency_builder import _candidate_relpaths, _lang_from_path
 from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, edge_payload, find_edge_key_with_relation, iter_multi_edges
+from md_generator.codeflow.graph.tsconfig_cross_repo import expand_module_with_tsconfig_paths, tsconfig_candidate_files
 
 _EXT_MARKER = "::external::"
 
@@ -67,6 +68,27 @@ def _java_paths(mod: str) -> list[str]:
     return [base + ".java", base + ".kt"]
 
 
+def _java_simple_type(mod: str) -> str | None:
+    if not mod or mod.startswith("relative::") or mod.startswith("@") or "/" in mod:
+        return None
+    if "." not in mod:
+        return None
+    return mod.rsplit(".", 1)[-1]
+
+
+def _class_nodes_simple_name(g: CodeflowGraph, lab: str, simple: str) -> list[str]:
+    prefix = f"{lab}::class:"
+    out: list[str] = []
+    for n in g.nodes():
+        s = str(n)
+        if not s.startswith(prefix):
+            continue
+        if s.rsplit("::", 1)[-1] != simple:
+            continue
+        out.append(s)
+    return sorted(out)
+
+
 def _paths_for_module(mod: str, language: str) -> list[str]:
     cands: list[str] = []
     if language == "java" or (language == "mixed" and "." in mod and "/" not in mod and not mod.endswith(".py")):
@@ -86,11 +108,23 @@ def _paths_for_module(mod: str, language: str) -> list[str]:
 def resolve_cross_repo_imports(
     g: CodeflowGraph,
     package_hints: dict[str, str] | None,
+    *,
+    tsconfig_maps_by_repo: dict[str, dict[str, list[str]]] | None = None,
+    maven_hints: dict[str, str] | None = None,
 ) -> int:
-    """Add ``REL_CROSS_REPO_IMPORT`` edges from sources to resolved ``file:`` nodes in hinted repos."""
-    if not package_hints:
-        return 0
-    hints = {str(k).strip(): str(v).strip() for k, v in package_hints.items() if str(k).strip() and str(v).strip()}
+    """Add ``REL_CROSS_REPO_IMPORT`` edges from sources to resolved ``file:`` / ``class:`` nodes in hinted repos."""
+    merged: dict[str, str] = {}
+    if maven_hints:
+        for k, v in maven_hints.items():
+            ks, vs = str(k).strip(), str(v).strip()
+            if ks and vs:
+                merged[ks] = vs
+    if package_hints:
+        for k, v in package_hints.items():
+            ks, vs = str(k).strip(), str(v).strip()
+            if ks and vs:
+                merged[ks] = vs
+    hints = merged
     if not hints:
         return 0
     known_repos = _repos_in_graph(g)
@@ -124,11 +158,23 @@ def resolve_cross_repo_imports(
             fp = u.split("::file:", 1)[1]
             lang_u = _lang_from_path(fp.replace("\\", "/"))
         cands = _paths_for_module(mod, lang_u)
+        ts_map = (tsconfig_maps_by_repo or {}).get(tgt_lab)
+        if ts_map and mod.startswith("@"):
+            for stem in expand_module_with_tsconfig_paths(mod, ts_map):
+                for f in tsconfig_candidate_files(stem):
+                    if f not in cands:
+                        cands.append(f)
         matches = [idx[(tgt_lab, p)] for p in cands if (tgt_lab, p) in idx]
         matches = list(dict.fromkeys(matches))
-        if len(matches) != 1:
+        tgt_id: str | None = matches[0] if len(matches) == 1 else None
+        if tgt_id is None:
+            simple = _java_simple_type(mod)
+            if simple:
+                cls_hits = _class_nodes_simple_name(g, tgt_lab, simple)
+                if len(cls_hits) == 1:
+                    tgt_id = cls_hits[0]
+        if tgt_id is None:
             continue
-        tgt_id = matches[0]
         if find_edge_key_with_relation(g, u, tgt_id, rel.REL_CROSS_REPO_IMPORT) is not None:
             continue
         g.add_edge(

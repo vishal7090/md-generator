@@ -16,9 +16,15 @@ def _payload(
     entry_id: str,
     *,
     file_cluster_map: dict[str, int] | None = None,
+    file_cluster_label_map: dict[str, str] | None = None,
 ) -> str:
     return json.dumps(
-        enrich_graph_for_views(graph_json, entry_id, file_cluster_map=file_cluster_map),
+        enrich_graph_for_views(
+            graph_json,
+            entry_id,
+            file_cluster_map=file_cluster_map,
+            file_cluster_label_map=file_cluster_label_map,
+        ),
         ensure_ascii=False,
     )
 
@@ -39,9 +45,15 @@ def write_html_unified(
     pr_impact: dict[str, Any] | None = None,
     cfg_by_symbol: dict[str, Any] | None = None,
     file_cluster_map: dict[str, int] | None = None,
+    file_cluster_label_map: dict[str, str] | None = None,
 ) -> None:
     """Write ``index.unified.html`` under ``entry_dir``."""
-    payload = _payload(graph_json, entry_id, file_cluster_map=file_cluster_map)
+    payload = _payload(
+        graph_json,
+        entry_id,
+        file_cluster_map=file_cluster_map,
+        file_cluster_label_map=file_cluster_label_map,
+    )
     title = html.escape(entry_id)
     entry_json = json.dumps(entry_id, ensure_ascii=False)
     neighbors_json = json.dumps(semantic_neighbors or {}, ensure_ascii=False)
@@ -103,6 +115,7 @@ def write_html_unified(
     """
 
     js_core = r"""
+    const NODE_DISPLAY_CAP = 500;
     function relKey(e) {
       const r = (e && e.relation) || (e && e.kind) || '';
       return String(r).toUpperCase();
@@ -112,7 +125,18 @@ def write_html_unified(
       const HITS = new Set((SEARCH_HITS || []).map((h) => h.node_id));
       const PR_SEEDS = new Set((PR_IMPACT && PR_IMPACT.seed_nodes) || []);
       const PR_IMP = new Set((PR_IMPACT && PR_IMPACT.impacted_nodes) || []);
-      for (const n of data.nodes || []) {
+      const rawN = data.nodes || [];
+      let nodes = rawN;
+      if (rawN.length > NODE_DISPLAY_CAP) {
+        nodes = rawN.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).slice(0, NODE_DISPLAY_CAP);
+        const w = document.getElementById('graphCapWarn');
+        if (w) {
+          w.style.display = '';
+          w.textContent = 'Graph: showing ' + NODE_DISPLAY_CAP + ' of ' + rawN.length + ' nodes (deterministic sort). Full data remains in graph JSON.';
+        }
+      }
+      const idSet = new Set(nodes.map((n) => n.id));
+      for (const n of nodes) {
         const d = { id: n.id, label: n.cy_label_short || n.id, semantic_group: n.semantic_group, repo: n.repo || '', cluster_color: n.cluster_color || '' };
         let prCls = '';
         if (PR_SEEDS.size && PR_SEEDS.has(n.id)) prCls = 'pr-seed ';
@@ -128,6 +152,7 @@ def write_html_unified(
       let ei = 0;
       for (const e of data.edges || []) {
         if (!e.source || !e.target) continue;
+        if (!idSet.has(e.source) || !idSet.has(e.target)) continue;
         const rk = relKey(e);
         let lineStyle = 'solid';
         let width = 2;
@@ -293,7 +318,7 @@ def write_html_unified(
   <style>{css}</style>
 </head>
 <body>
-  <header>
+  <header role="banner">
     <h1>Codeflow unified · {title}</h1>
     <p style="margin:0;font-size:12px;color:#555;">{cluster_esc}</p>
     <p style="margin:4px 0 0;font-size:12px;">
@@ -303,22 +328,28 @@ def write_html_unified(
       {nl_link}
     </p>
   </header>
-  <main>
-    <div id="left">
-      <div class="toolbar" style="flex-direction:column;align-items:stretch;margin:0;">
+  <main role="main">
+    <div id="left" role="region" aria-label="Filters and graph context">
+      <div class="toolbar" style="flex-direction:column;align-items:stretch;margin:0;" role="toolbar" aria-label="Graph filters">
         <label>Semantic group</label>
-        <select id="grp">
+        <select id="grp" aria-label="Filter by semantic group">
           <option value="__all__">All</option>
           {group_options}
         </select>
         <label for="flt">Search labels</label>
-        <input type="search" id="flt" placeholder="label…" autocomplete="off"/>
+        <input type="search" id="flt" placeholder="label…" autocomplete="off" aria-label="Filter nodes by label text"/>
         <label for="repoF">Repo</label>
-        <select id="repoF">
+        <select id="repoF" aria-label="Filter by repository">
           <option value="__all__">All</option>
           {repo_options}
         </select>
-        <label id="prLab" style="display:none;margin-top:6px;"><input type="checkbox" id="prHi"/> PR focus</label>
+        <label id="prLab" style="display:none;margin-top:6px;"><input type="checkbox" id="prHi" aria-label="Dim nodes outside PR impacted set"/> PR focus</label>
+      </div>
+      <p id="graphCapWarn" style="display:none;color:#a60;font-size:11px;margin:4px 0;"></p>
+      <div id="prPanel" style="display:none;margin-bottom:8px;" role="region" aria-label="Pull request impact summary">
+        <strong>PR impact (this slice)</strong>
+        <ul id="prUl" style="margin:4px 0;padding-left:18px;font-size:11px;"></ul>
+        <a id="prLink" href="#" style="font-size:11px;">pr-impact.json</a>
       </div>
       <strong>Slice nodes ({len(sl.nodes)})</strong>
       <pre style="max-height:140px;overflow:auto;">{nodes_text}</pre>
@@ -329,10 +360,12 @@ def write_html_unified(
       <strong>Similar (embedding)</strong>
       <div id="simList"></div>
     </div>
-    <div id="cy-wrap"><div id="cy"></div></div>
-    <div id="right">
+    <div id="cy-wrap" role="region" aria-label="Interactive call graph"><div id="cy" tabindex="0" aria-label="Call graph canvas"></div></div>
+    <div id="right" role="region" aria-label="CFG and node detail">
       <strong>CFG (Mermaid)</strong>
       <div id="mmd" class="mermaid"></div>
+      <strong>CFG paths (same caps as Markdown)</strong>
+      <pre id="cfgPathsPre" style="max-height:160px;overflow:auto;font-size:10px;"></pre>
       <strong>Node</strong>
       <pre id="nodeDetail" style="max-height:120px;overflow:auto;"></pre>
       <p style="color:#666;font-size:11px;">Tap a node: 1-hop highlight, CFG when embedded. CALLS solid, EVENT dashed, REFERENCES dotted, IMPORTS thin, CROSS_REPO_IMPORT bold dashed.</p>
@@ -350,6 +383,29 @@ def write_html_unified(
     const nodeById = new Map((DATA.nodes || []).map((n) => [n.id, n]));
     {js_core}
     (function() {{
+      const prPanel = document.getElementById('prPanel');
+      const prUl = document.getElementById('prUl');
+      const prA = document.getElementById('prLink');
+      if (prPanel && prUl && PR_IMPACT && PR_IMPACT.base) {{
+        prPanel.style.display = '';
+        const lines = [
+          'base → head: ' + PR_IMPACT.base + ' → ' + PR_IMPACT.head,
+          'changed files (scan): ' + (PR_IMPACT.changed_files_count || 0),
+          'seeds (scan): ' + (PR_IMPACT.seed_nodes_count || 0),
+          'impacted (scan): ' + (PR_IMPACT.impacted_nodes_count || 0),
+          'seeds in slice: ' + (PR_IMPACT.seeds_in_slice_count || 0),
+          'impacted in slice: ' + (PR_IMPACT.impacted_in_slice_count || 0),
+        ];
+        lines.forEach((t) => {{
+          const li = document.createElement('li');
+          li.textContent = t;
+          prUl.appendChild(li);
+        }});
+        if (prA && PR_IMPACT.pr_impact_json_href) {{
+          prA.href = PR_IMPACT.pr_impact_json_href;
+          prA.textContent = PR_IMPACT.pr_impact_json_href;
+        }}
+      }}
       const els = buildElements(DATA);
       const cy = cytoscape({{
         container: document.getElementById('cy'),
@@ -401,6 +457,10 @@ def write_html_unified(
           det.textContent = [id, row.type && ('type: ' + row.type), row.file_path && ('file: ' + row.file_path), row.repo && ('repo: ' + row.repo)].filter(Boolean).join('\\n');
         }}
         const pack = (CFG_BY_SYMBOL || {{}})[id];
+        const pathPre = document.getElementById('cfgPathsPre');
+        if (pathPre) {{
+          pathPre.textContent = (pack && pack.paths_md) ? pack.paths_md : '';
+        }}
         if (window.__renderCfgMermaid) {{
           if (pack && pack.mermaid) await window.__renderCfgMermaid(pack.mermaid);
           else await window.__renderCfgMermaid(MERMAID_TEXT);

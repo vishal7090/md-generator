@@ -211,7 +211,13 @@ def _graph_inventory_lines(graph: CodeflowGraph, top_n: int = 10) -> list[str]:
     return lines
 
 
-def _system_graph_insights_lines(graph: CodeflowGraph, *, top_n: int = 10, community_preview: int = 8) -> list[str]:
+def _system_graph_insights_lines(
+    graph: CodeflowGraph,
+    *,
+    top_n: int = 10,
+    community_preview: int = 8,
+    include_contains: bool = False,
+) -> list[str]:
     """Top modules, file import layer, high-impact symbols, modularity communities."""
     from md_generator.codeflow.graph.analysis import dependency_reachability_subgraph
     from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
@@ -257,11 +263,12 @@ def _system_graph_insights_lines(graph: CodeflowGraph, *, top_n: int = 10, commu
     lines += [
         "### Most impacted nodes (approx.)",
         "",
-        "Largest downstream reach in the **dependency reachability** graph (CONTAINS excluded); "
-        "candidate set capped for performance.",
+        "Largest downstream reach in the **dependency reachability** graph ("
+        f"{'CONTAINS included' if include_contains else 'CONTAINS excluded'}"
+        "); candidate set capped for performance.",
         "",
     ]
-    dg = dependency_reachability_subgraph(graph)
+    dg = dependency_reachability_subgraph(graph, include_contains=include_contains)
     candidates: list[str] = []
     for n, d in graph.nodes(data=True):
         if not isinstance(n, str) or "::" not in n or n.startswith("unknown::"):
@@ -327,10 +334,12 @@ def write_entry_markdown(
     intelligence_cap: int = 80,
     graph_include_structural: bool = False,
     intelligence_transitive_callers: bool = False,
+    intelligence_include_contains: bool = False,
     include_references: bool = False,
     include_events: bool = False,
     event_impact_section: bool = False,
     cluster_by_file: dict[str, int] | None = None,
+    cluster_label_by_file: dict[str, str] | None = None,
     enable_embeddings: bool = False,
     semantic_neighbors: list[dict[str, Any]] | None = None,
     nl_query_href: str | None = None,
@@ -377,6 +386,9 @@ def write_entry_markdown(
         lines.append(
             f"- **Impacted nodes in this slice:** {pr_impact_slice.get('impacted_in_slice_count', 0)}",
         )
+        href = pr_impact_slice.get("pr_impact_json_href")
+        if isinstance(href, str) and href.strip():
+            lines.append(f"- **Full payload:** [{href.strip()}]({href.strip()})")
         lines.append("")
     lines.append("## Flow Description")
     lines.append("")
@@ -388,17 +400,33 @@ def write_entry_markdown(
     lines.append("")
 
     if intelligence_transitive_callers:
-        cb = called_by_transitive(g, entry_id, intelligence_cap)
+        cb = called_by_transitive(
+            g,
+            entry_id,
+            intelligence_cap,
+            include_contains=intelligence_include_contains,
+        )
         cb_blurb = (
             "*Transitive upstream (`nx.ancestors` on dependency reachability: CALLS + structural edges; "
-            "CONTAINS excluded; capped).*"
+            f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; capped).*"
         )
     else:
-        cb = called_by_direct(g, entry_id, intelligence_cap)
-        cb_blurb = (
-            "*Direct predecessors in dependency reachability (calls + structural relations when enabled; capped).*"
+        cb = called_by_direct(
+            g,
+            entry_id,
+            intelligence_cap,
+            include_contains=intelligence_include_contains,
         )
-    im = impact_descendants(g, entry_id, intelligence_cap)
+        cb_blurb = (
+            "*Direct predecessors in dependency reachability (calls + structural relations when enabled; "
+            f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; capped).*"
+        )
+    im = impact_descendants(
+        g,
+        entry_id,
+        intelligence_cap,
+        include_contains=intelligence_include_contains,
+    )
     lines.append("## Called By")
     lines.append("")
     lines.append(cb_blurb)
@@ -413,7 +441,10 @@ def write_entry_markdown(
     lines.append("")
     lines.append("## Impact")
     lines.append("")
-    lines.append("*Transitive downstream (`nx.descendants` on dependency reachability; capped).*")
+    lines.append(
+        "*Transitive downstream (`nx.descendants` on dependency reachability; "
+        f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; capped).*",
+    )
     lines.append("")
     if im:
         for x in im:
@@ -536,12 +567,22 @@ def write_entry_markdown(
         lines.append("")
 
     if cluster_by_file and entry_id in g:
-        fp0 = str((g.nodes[entry_id].get("file_path") or "")).strip()
+        fp0 = str((g.nodes[entry_id].get("file_path") or "")).strip().replace("\\", "/")
         cid0 = cluster_by_file.get(fp0) if fp0 else None
         if cid0 is not None:
             lines.append("## Cluster")
             lines.append("")
-            lines.append(f"- **Community id:** {cid0} (from `cluster_mode` communities)")
+            lab0 = (
+                cluster_label_by_file.get(fp0)
+                if cluster_label_by_file and fp0
+                else None
+            )
+            if lab0:
+                lines.append(
+                    f"- **Cluster label:** `{_md_escape(str(lab0))}` (id {cid0}; rule-based, `cluster_mode` communities)",
+                )
+            else:
+                lines.append(f"- **Community id:** {cid0} (from `cluster_mode` communities)")
             lines.append("")
 
     if enable_embeddings and entry_id in g:
@@ -690,6 +731,8 @@ def write_system_overview(
     project_hint: str | None = None,
     graph: CodeflowGraph | None = None,
     emit_graph_stats: bool = False,
+    graph_reachability_include_contains: bool = False,
+    extra_sections: list[str] | None = None,
 ) -> None:
     """Write root overview. Each row: ``(slug, type_label, start_method, link_line, one_line)``.
 
@@ -711,5 +754,12 @@ def write_system_overview(
     lines.append("")
     if emit_graph_stats and graph is not None:
         lines.extend(_graph_inventory_lines(graph))
-        lines.extend(_system_graph_insights_lines(graph))
+        lines.extend(
+            _system_graph_insights_lines(
+                graph,
+                include_contains=graph_reachability_include_contains,
+            ),
+        )
+    if extra_sections:
+        lines.extend(extra_sections)
     path.write_text("\n".join(lines), encoding="utf-8")

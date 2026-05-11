@@ -15,13 +15,18 @@ from md_generator.codeflow.graph.multigraph_utils import (
 _SKIP_REACHABILITY: frozenset[str] = frozenset({rel.REL_CONTAINS})
 
 
-def dependency_reachability_subgraph(g: CodeflowGraph) -> nx.DiGraph:
-    """Collapse to a simple digraph: non-CONTAINS edges (one arc per pair)."""
+def dependency_reachability_subgraph(
+    g: CodeflowGraph,
+    *,
+    include_contains: bool = False,
+) -> nx.DiGraph:
+    """Collapse to a simple digraph: one arc per pair (by default excludes CONTAINS)."""
+    skip = frozenset() if include_contains else _SKIP_REACHABILITY
     sg = nx.DiGraph()
     sg.add_nodes_from(g.nodes())
     for u, v, _k, d in iter_multi_edges(g):
         r = d.get("relation", rel.REL_CALLS)
-        if r in _SKIP_REACHABILITY:
+        if r in skip:
             continue
         sg.add_edge(u, v)
     return sg
@@ -67,16 +72,28 @@ def event_impact(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
     return sorted(des)[:cap]
 
 
-def called_by_direct_dependency(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
-    dg = dependency_reachability_subgraph(g)
+def called_by_direct_dependency(
+    g: CodeflowGraph,
+    node_id: str,
+    cap: int,
+    *,
+    include_contains: bool = False,
+) -> list[str]:
+    dg = dependency_reachability_subgraph(g, include_contains=include_contains)
     if node_id not in dg:
         return []
     preds = sorted(dg.predecessors(node_id))
     return preds[:cap]
 
 
-def called_by_transitive_dependency(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
-    dg = dependency_reachability_subgraph(g)
+def called_by_transitive_dependency(
+    g: CodeflowGraph,
+    node_id: str,
+    cap: int,
+    *,
+    include_contains: bool = False,
+) -> list[str]:
+    dg = dependency_reachability_subgraph(g, include_contains=include_contains)
     if node_id not in dg:
         return []
     anc = nx.ancestors(dg, node_id)
@@ -84,8 +101,14 @@ def called_by_transitive_dependency(g: CodeflowGraph, node_id: str, cap: int) ->
     return sorted(anc)[:cap]
 
 
-def impact_descendants_dependency(g: CodeflowGraph, node_id: str, cap: int) -> list[str]:
-    dg = dependency_reachability_subgraph(g)
+def impact_descendants_dependency(
+    g: CodeflowGraph,
+    node_id: str,
+    cap: int,
+    *,
+    include_contains: bool = False,
+) -> list[str]:
+    dg = dependency_reachability_subgraph(g, include_contains=include_contains)
     if node_id not in dg:
         return []
     des = nx.descendants(dg, node_id)

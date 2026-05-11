@@ -95,6 +95,7 @@ def diff_impact_nodes(
     seeds: set[str],
     *,
     relations: frozenset[str] | None = None,
+    include_contains: bool = False,
 ) -> set[str]:
     """Nodes downstream of ``seeds`` over the dependency reachability graph (same model as Markdown impact).
 
@@ -102,7 +103,7 @@ def diff_impact_nodes(
     When ``relations`` is set, builds a subgraph keeping only those relation kinds.
     """
     if relations is None:
-        dg = dependency_reachability_subgraph(g)
+        dg = dependency_reachability_subgraph(g, include_contains=include_contains)
     else:
         from md_generator.codeflow.graph.multigraph_utils import iter_multi_edges
 
@@ -126,11 +127,12 @@ def build_pr_impact_payload(
     head: str,
     changed_files: list[str],
     primary_repo_label: str | None = None,
+    include_contains: bool = False,
 ) -> dict[str, Any]:
     """Compute seed and impacted sets and return a JSON-serializable dict (with capped lists)."""
     ch_set = set(changed_files)
     seeds = nodes_touching_files(g, ch_set, primary_repo_label=primary_repo_label)
-    impacted = diff_impact_nodes(g, seeds)
+    impacted = diff_impact_nodes(g, seeds, include_contains=include_contains)
     cap = PR_IMPACT_LIST_CAP
     cf_sorted = sorted(changed_files)
     seeds_sorted = sorted(seeds)

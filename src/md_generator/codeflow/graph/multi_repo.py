@@ -152,6 +152,6 @@ def link_cross_repo_imports(
     *,
     package_hints: dict[str, str] | None = None,
 ) -> int:
-    """Reserved for cross-repo IMPORT heuristics. ``package_hints`` is accepted for API stability; v1 returns 0."""
+    """Deprecated no-op: use ``resolve_cross_repo`` + :func:`cross_repo_resolver.resolve_cross_repo_imports` in the scan."""
     del g, package_hints
     return 0
