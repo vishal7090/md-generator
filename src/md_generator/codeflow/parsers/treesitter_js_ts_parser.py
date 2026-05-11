@@ -7,12 +7,14 @@ from pathlib import Path
 
 from tree_sitter import Language, Node, Parser
 
+from md_generator.codeflow.graph.relations import REL_IMPORTS
 from md_generator.codeflow.models.ir import (
     BranchPoint,
     BusinessRule,
     CallSite,
     CallResolution,
     FileParseResult,
+    StructuralEdge,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,13 @@ def _rel_key(path: Path, root: Path) -> str:
         return path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def _strip_js_string(s: str) -> str:
+    s = s.strip()
+    if len(s) >= 2 and s[0] in "'\"`" and s[-1] == s[0]:
+        return s[1:-1]
+    return s
 
 
 def _text(source: bytes, node: Node | None) -> str:
@@ -274,8 +283,66 @@ class TreesitterJsTsParser:
             logger.debug("tree-sitter parse has errors: %s", path)
         key = _rel_key(path, project_root)
         self._walk(tree.root_node, source, key, fr, class_name=None, current_fn=None)
+        self._collect_js_ts_imports(tree.root_node, source, key, fr)
         _collect_js_ts_validation_and_branches(tree.root_node, source, key, fr)
         return fr
+
+    def _collect_js_ts_imports(self, root: Node, source: bytes, file_key: str, fr: FileParseResult) -> None:
+        """``import`` / ``export … from`` / ``require('…')`` → file-level IMPORTS structural edges."""
+        fid = f"file:{file_key}"
+        stack: list[Node] = [root]
+        while stack:
+            n = stack.pop()
+            if n.type == "import_statement":
+                src_n = n.child_by_field_name("source")
+                if src_n:
+                    raw = _strip_js_string(_text(source, src_n))
+                    if raw:
+                        fr.structural_edges.append(
+                            StructuralEdge(
+                                source_id=fid,
+                                target_id=f"external::{raw}",
+                                relation=REL_IMPORTS,
+                                confidence=0.82,
+                                line=n.start_point[0] + 1,
+                            ),
+                        )
+            elif n.type == "export_statement":
+                src_n = n.child_by_field_name("source")
+                if src_n:
+                    raw = _strip_js_string(_text(source, src_n))
+                    if raw:
+                        fr.structural_edges.append(
+                            StructuralEdge(
+                                source_id=fid,
+                                target_id=f"external::{raw}",
+                                relation=REL_IMPORTS,
+                                confidence=0.8,
+                                line=n.start_point[0] + 1,
+                            ),
+                        )
+            elif n.type == "call_expression":
+                fn = n.child_by_field_name("function")
+                fn_txt = _text(source, fn).strip() if fn else ""
+                if fn_txt in ("require", "require.resolve"):
+                    args = n.child_by_field_name("arguments")
+                    if args:
+                        for ch in args.children:
+                            if ch.type == "string_fragment" or ch.type == "string":
+                                raw = _strip_js_string(_text(source, ch))
+                                if raw:
+                                    fr.structural_edges.append(
+                                        StructuralEdge(
+                                            source_id=fid,
+                                            target_id=f"external::{raw}",
+                                            relation=REL_IMPORTS,
+                                            confidence=0.75,
+                                            line=n.start_point[0] + 1,
+                                        ),
+                                    )
+                                break
+            for c in reversed(n.children):
+                stack.append(c)
 
     def _walk(
         self,

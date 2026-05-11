@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -325,10 +326,70 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write index.unified.html per entry (Cytoscape + CFG Mermaid + semantic sidebar)",
     )
     scan.add_argument(
+        "--nl-query",
+        default=None,
+        metavar="TEXT",
+        help="Rule-based NL intent; writes nl-query-results.json (similar/impact/called by/event/…)",
+    )
+    scan.add_argument(
+        "--emit-runtime-insights",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="With --emit-cfg and --cfg-runtime-trace, write runtime-insights.json (hot paths + rare edges)",
+    )
+    scan.add_argument(
+        "--runtime-insight-frequency-threshold",
+        type=float,
+        default=0.05,
+        help="Anomaly if edge count share of total trace mass is below this (default: 0.05)",
+    )
+    scan.add_argument(
+        "--runtime-insight-hot-paths-top",
+        type=int,
+        default=5,
+        help="Number of hottest CFG paths to record (default: 5)",
+    )
+    scan.add_argument(
+        "--semantic-outlier-distance-threshold",
+        type=float,
+        default=0.7,
+        help="With embeddings, flag nodes farther than 1-cosine from cluster centroid (default: 0.7)",
+    )
+    scan.add_argument(
         "--graph-include-structural",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Merge parser structural edges (IMPORTS / INHERITS / …; Java) into the graph (default: off)",
+    )
+    scan.add_argument(
+        "--enable-dependency-graph",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Alias: enable structural IMPORTS/dependency edges (same merge as --graph-include-structural)",
+    )
+    scan.add_argument(
+        "--graph-include-contains-reachability",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Include CONTAINS in dependency reachability (PR impact, Called by, Impact lists)",
+    )
+    scan.add_argument(
+        "--parser-mode",
+        choices=("auto", "treesitter", "external"),
+        default="auto",
+        help="C++: treesitter=Tree-sitter only; external=clang only; auto=current fallback",
+    )
+    scan.add_argument(
+        "--ui-cfg-max-methods",
+        type=int,
+        default=25,
+        help="Max methods in flow slice to embed CFG Mermaid in index.unified.html (default: 25)",
+    )
+    scan.add_argument(
+        "--ui",
+        choices=("default", "unified"),
+        default="default",
+        help="unified: write index.unified.html (same as --emit-html-unified)",
     )
     scan.add_argument(
         "--intelligence-transitive-callers",
@@ -349,10 +410,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write graph.db (SQLite nodes/edges) alongside graph-full.json",
     )
     scan.add_argument(
+        "--graph-sqlite-mode",
+        choices=("full", "incremental"),
+        default="full",
+        help="full replaces graph.db each scan; incremental upserts and appends scan metadata",
+    )
+    scan.add_argument(
+        "--graph-sqlite-prune-missing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="incremental only: delete rows not seen in the latest scan",
+    )
+    scan.add_argument(
         "--emit-graph-communities",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="When json format is on, write graph-communities.json (modularity; mode via --cluster-mode)",
+    )
+    scan.add_argument(
+        "--no-cluster-labels",
+        action="store_true",
+        default=False,
+        help="Disable rule-based community labels (use numeric ids only in Markdown)",
     )
     scan.add_argument(
         "--include-references",
@@ -421,6 +500,67 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Remove all cached Git clones under the codeflow cache dir, then exit (no scan)",
     )
+    scan.add_argument(
+        "--multi-repo",
+        action="append",
+        default=None,
+        metavar="DIR",
+        help="Extra repository root to merge into one graph (repeatable); entries may be comma-separated",
+    )
+    scan.add_argument(
+        "--diff-base",
+        default=None,
+        metavar="REF",
+        help="With --diff-head, run git diff on project root and write pr-impact.json",
+    )
+    scan.add_argument(
+        "--diff-head",
+        default=None,
+        metavar="REF",
+        help="With --diff-base, run git diff on project root and write pr-impact.json",
+    )
+    scan.add_argument(
+        "--cross-repo-hints",
+        default=None,
+        metavar="JSON",
+        help='JSON object: package prefix → repo label (used with --resolve-cross-repo after --multi-repo)',
+    )
+    scan.add_argument(
+        "--resolve-cross-repo",
+        action="store_true",
+        default=False,
+        help="Resolve external:: IMPORTS across merged repos using --cross-repo-hints",
+    )
+    scan.add_argument(
+        "--cross-repo-tsconfig",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="With --resolve-cross-repo, load tsconfig/jsconfig paths per repo for @… modules",
+    )
+    scan.add_argument(
+        "--cross-repo-maven-hints",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="With --resolve-cross-repo, add Maven pom.xml groupId→repo label hints",
+    )
+    scan.add_argument(
+        "--cache-ttl",
+        type=int,
+        default=0,
+        help="If >0, skip git fetch/pull when clone metadata is younger than this many seconds (same branch/commit as last run; 0=off)",
+    )
+    scan.add_argument(
+        "--cache-clear",
+        choices=("all", "git", "semantic", "unified"),
+        default=None,
+        help="Clear caches before scan: git|all wipes global clone cache first; scan also clears project .codeflow_cache for semantic|unified|all",
+    )
+    scan.add_argument(
+        "--no-cache-layer",
+        action="store_true",
+        default=False,
+        help="Disable git TTL skip and omit per-clone cache metadata writes",
+    )
     return p
 
 
@@ -440,6 +580,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     raw = str(ns.path).strip()
+    cm_pre = getattr(ns, "cache_clear", None)
+    if cm_pre and str(cm_pre).strip():
+        mpre = str(cm_pre).strip().lower()
+        if mpre in ("git", "all"):
+            from md_generator.codeflow.core.cache_manager import apply_git_cache_clear
+
+            apply_git_cache_clear()
     if ns.verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
         logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
@@ -454,6 +601,8 @@ def main(argv: list[str] | None = None) -> int:
                 no_cache=bool(ns.no_git_cache),
                 auth_token=ns.git_auth_token,
                 ssh_key_path=ns.git_ssh_key,
+                cache_ttl_seconds=int(getattr(ns, "cache_ttl", 0) or 0),
+                cache_enabled=not bool(getattr(ns, "no_cache_layer", False)),
             )
         except GitLoaderError as e:
             print(str(e), file=sys.stderr)
@@ -472,6 +621,25 @@ def main(argv: list[str] | None = None) -> int:
             out = Path.cwd() / "codeflow-out"
         entries_file = Path(ns.entries_file).expanduser().resolve() if ns.entries_file else None
         codeflow_cfg = Path(ns.codeflow_config).expanduser().resolve() if ns.codeflow_config else None
+        multi_roots: tuple[Path, ...] = ()
+        if ns.multi_repo:
+            acc: list[Path] = []
+            for chunk in ns.multi_repo:
+                for piece in str(chunk).split(","):
+                    p = piece.strip()
+                    if p:
+                        acc.append(Path(p).expanduser().resolve())
+            multi_roots = tuple(acc)
+        diff_base = str(ns.diff_base).strip() if getattr(ns, "diff_base", None) and str(ns.diff_base).strip() else None
+        diff_head = str(ns.diff_head).strip() if getattr(ns, "diff_head", None) and str(ns.diff_head).strip() else None
+        cr_hints: dict[str, str] | None = None
+        if getattr(ns, "cross_repo_hints", None) and str(ns.cross_repo_hints).strip():
+            try:
+                obj = json.loads(str(ns.cross_repo_hints).strip())
+                if isinstance(obj, dict):
+                    cr_hints = {str(k): str(v) for k, v in obj.items()}
+            except json.JSONDecodeError:
+                cr_hints = None
         cfg = ScanConfig(
             project_root=root,
             paths_override=paths_override,
@@ -525,8 +693,16 @@ def main(argv: list[str] | None = None) -> int:
             embedding_k_clusters=int(ns.embedding_k_clusters),
             semantic_top_k=int(ns.semantic_top_k),
             semantic_search=ns.semantic_search,
-            emit_html_unified=bool(ns.emit_html_unified),
+            emit_html_unified=bool(ns.emit_html_unified) or ns.ui == "unified",
+            nl_query=ns.nl_query,
+            emit_runtime_insights=bool(ns.emit_runtime_insights),
+            runtime_insight_frequency_threshold=float(ns.runtime_insight_frequency_threshold),
+            runtime_insight_hot_paths_top=int(ns.runtime_insight_hot_paths_top),
+            semantic_outlier_distance_threshold=float(ns.semantic_outlier_distance_threshold),
             graph_include_structural=bool(ns.graph_include_structural),
+            enable_dependency_graph=bool(ns.enable_dependency_graph),
+            parser_mode=ns.parser_mode,
+            ui_cfg_max_methods=int(ns.ui_cfg_max_methods),
             include_references=bool(ns.include_references),
             include_events=bool(ns.include_events),
             cluster_mode=ns.cluster_mode,
@@ -534,8 +710,22 @@ def main(argv: list[str] | None = None) -> int:
             intelligence_transitive_callers=bool(ns.intelligence_transitive_callers),
             emit_system_graph_stats=bool(ns.emit_system_graph_stats),
             emit_graph_sqlite=bool(ns.emit_graph_sqlite),
+            graph_sqlite_mode=str(getattr(ns, "graph_sqlite_mode", "full")),  # type: ignore[arg-type]
+            graph_sqlite_prune_missing=bool(getattr(ns, "graph_sqlite_prune_missing", False)),
             emit_graph_communities=bool(ns.emit_graph_communities),
+            emit_cluster_labels=not bool(getattr(ns, "no_cluster_labels", False)),
             emit_llm_entry_sidecar=bool(ns.emit_llm_entry_sidecar),
+            multi_repo_roots=multi_roots,
+            diff_base=diff_base,
+            diff_head=diff_head,
+            cross_repo_package_hints=cr_hints,
+            resolve_cross_repo=bool(getattr(ns, "resolve_cross_repo", False)),
+            cross_repo_tsconfig=bool(getattr(ns, "cross_repo_tsconfig", False)),
+            cross_repo_maven_hints=bool(getattr(ns, "cross_repo_maven_hints", False)),
+            graph_include_contains_reachability=bool(getattr(ns, "graph_include_contains_reachability", False)),
+            cache_enabled=not bool(getattr(ns, "no_cache_layer", False)),
+            cache_ttl_seconds=int(getattr(ns, "cache_ttl", 0) or 0),
+            cache_clear_mode=getattr(ns, "cache_clear", None),
         )
         run_scan(cfg, workspace=ws)
         print(str(cfg.output_path.resolve()))

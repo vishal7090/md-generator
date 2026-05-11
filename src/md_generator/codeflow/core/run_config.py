@@ -71,8 +71,14 @@ class ScanConfig:
     emit_system_graph_stats: bool = False
     # Optional SQLite graph.db (nodes/edges tables) for large-repo queries.
     emit_graph_sqlite: bool = False
+    # ``full`` replaces ``graph.db``; ``incremental`` upserts nodes/edges and records scan rows.
+    graph_sqlite_mode: Literal["full", "incremental"] = "full"
+    # When ``incremental``, drop nodes/edges not seen in this scan (default off = accumulate).
+    graph_sqlite_prune_missing: bool = False
     # When json is in formats, write graph-communities.json (greedy modularity on file imports).
     emit_graph_communities: bool = False
+    # Deterministic rule-based community labels in JSON / Markdown / unified HTML (no LLM).
+    emit_cluster_labels: bool = True
     # Write entry.llm.md beside entry.md (LLM-oriented pointers, no duplicate full text).
     emit_llm_entry_sidecar: bool = False
     # When ``emit_cfg`` is on, build IR for these languages (skip heavy repos by turning one off).
@@ -92,6 +98,41 @@ class ScanConfig:
     semantic_top_k: int = 10
     semantic_search: str | None = None
     emit_html_unified: bool = False
+    # Natural-language query (rule-based); writes nl-query-results.json at scan root.
+    nl_query: str | None = None
+    # Hot paths + runtime-frequency CFG anomalies (+ optional semantic outliers); needs emit_cfg + cfg_runtime_trace JSON.
+    emit_runtime_insights: bool = False
+    runtime_insight_frequency_threshold: float = 0.05
+    runtime_insight_hot_paths_top: int = 5
+    semantic_outlier_distance_threshold: float = 0.7
+    # Additional repository roots merged into one graph (``project_root`` is first; labels from dir names).
+    multi_repo_roots: tuple[Path, ...] = ()
+    # When set on a git ``project_root``, write ``pr-impact.json`` after the graph is built.
+    diff_base: str | None = None
+    diff_head: str | None = None
+    # Optional package prefix → target repo label for cross-repo IMPORT resolution after multi-repo merge.
+    cross_repo_package_hints: dict[str, str] | None = None
+    # When true (with hints + structural deps), resolve ``external::…`` IMPORTS to other repos.
+    resolve_cross_repo: bool = False
+    # Load ``tsconfig.json`` / ``jsconfig.json`` ``paths`` per merged repo for ``@…`` cross-repo candidates.
+    cross_repo_tsconfig: bool = False
+    # Add ``pom.xml`` ``groupId`` → repo label hints (does not override ``cross_repo_package_hints`` keys).
+    cross_repo_maven_hints: bool = False
+    # Unified cache: TTL for git clone refresh skip; ``cache_clear_mode`` runs once at scan start.
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 0
+    cache_clear_mode: str | None = None  # all | git | semantic | unified
+    # UX alias: treat like ``graph_include_structural`` for dependency/import edges.
+    enable_dependency_graph: bool = False
+    # Parser preference: ``auto`` per language; ``treesitter`` / ``external`` where wired (see unified_parser).
+    parser_mode: Literal["auto", "treesitter", "external"] = "auto"
+    # When true, include ``REL_CONTAINS`` in dependency reachability (default: exclude).
+    graph_include_contains_reachability: bool = False
+    # Cap embedded per-method CFG Mermaid payloads in ``index.unified.html``.
+    ui_cfg_max_methods: int = 25
+
+    def structural_graph_enabled(self) -> bool:
+        return bool(self.graph_include_structural or self.enable_dependency_graph)
 
     def parsed_include(self) -> set[str] | None:
         if not self.include or not str(self.include).strip():

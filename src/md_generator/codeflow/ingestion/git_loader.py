@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
 _LOG = logging.getLogger(__name__)
+
+_CLONE_META_NAME = ".codeflow_clone_meta.json"
 
 _ENV_CACHE = "CODEFLOW_GIT_CACHE"
 
@@ -138,6 +142,47 @@ def _run_git(
         raise GitLoaderError(f"git failed ({r.returncode}): {' '.join(args[:4])}… — {err}")
 
 
+def _read_clone_meta(repo_path: Path) -> dict[str, object] | None:
+    p = repo_path / _CLONE_META_NAME
+    if not p.is_file():
+        return None
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _write_clone_meta(
+    repo_path: Path,
+    *,
+    url_safe: str,
+    branch: str | None,
+    commit_requested: str | None,
+    head_sha: str,
+) -> None:
+    body = {
+        "url_safe": url_safe,
+        "updated_at": time.time(),
+        "branch": branch,
+        "commit_requested": commit_requested,
+        "head_sha": head_sha,
+    }
+    (repo_path / _CLONE_META_NAME).write_text(json.dumps(body, indent=2), encoding="utf-8")
+
+
+def _git_head_sha(repo_path: Path) -> str:
+    r = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if r.returncode != 0:
+        return ""
+    return (r.stdout or "").strip()
+
+
 def clean_all_cache(cache_root: Path | None = None) -> None:
     """Remove the entire clone cache tree."""
     root = cache_root if cache_root is not None else default_cache_root()
@@ -154,6 +199,8 @@ def clone_or_update_repo(
     no_cache: bool = False,
     auth_token: str | None = None,
     ssh_key_path: Path | None = None,
+    cache_ttl_seconds: int = 0,
+    cache_enabled: bool = True,
 ) -> Path:
     """
     Return a resolved path to a local clone of ``url``.
@@ -170,6 +217,26 @@ def clone_or_update_repo(
 
     log_url = _safe_url_for_log(raw_url)
     _LOG.info("Git workspace target: %s (cache path %s)", log_url, repo_path)
+
+    if (
+        cache_enabled
+        and cache_ttl_seconds > 0
+        and not no_cache
+        and repo_path.exists()
+    ):
+        meta = _read_clone_meta(repo_path)
+        if meta is not None:
+            age = time.time() - float(meta.get("updated_at") or 0.0)
+            mb = meta.get("branch")
+            mc = meta.get("commit_requested")
+            if (
+                age >= 0
+                and age < float(cache_ttl_seconds)
+                and mb == branch
+                and mc == commit
+            ):
+                _LOG.info("Git cache TTL skip (age %.0fs < %ds, same branch/commit keys)", age, cache_ttl_seconds)
+                return repo_path.resolve()
 
     if no_cache and repo_path.exists():
         shutil.rmtree(repo_path, ignore_errors=True)
@@ -205,5 +272,15 @@ def clone_or_update_repo(
         except GitLoaderError:
             _LOG.debug("fetch depth for commit failed, trying checkout anyway")
         _run_git(["git", "-C", str(repo_path), "checkout", commit], env=env)
+
+    if cache_enabled:
+        head = _git_head_sha(repo_path)
+        _write_clone_meta(
+            repo_path,
+            url_safe=log_url,
+            branch=branch,
+            commit_requested=commit,
+            head_sha=head,
+        )
 
     return repo_path.resolve()

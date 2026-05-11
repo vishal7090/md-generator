@@ -402,6 +402,10 @@ def build_graph(
         include_structural=include_structural,
         include_references=include_references,
     )
+    if include_structural:
+        from md_generator.codeflow.graph.dependency_builder import apply_import_resolution
+
+        apply_import_resolution(g, parse_results, root)
     _add_file_level_import_edges(g)
 
     if (include_structural or include_references) and _LOG.isEnabledFor(logging.DEBUG):

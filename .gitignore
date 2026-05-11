@@ -70,6 +70,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+example/_build/
 
 # PyBuilder
 .pybuilder/
@@ -218,5 +219,5 @@ __marimo__/
 # Cursor (local IDE state) — keep versioned agent skills under .cursor/skills/
 .cursor/*
 
-# Docs
-docs
+# Example sample inputs / CLI batch folder (local)
+example

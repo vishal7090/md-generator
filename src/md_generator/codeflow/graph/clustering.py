@@ -159,7 +159,9 @@ def file_cluster_labels(
     def assign_from_members(members: list[str], cid: int) -> None:
         for nid in members:
             fp = ""
-            if isinstance(nid, str) and nid.startswith("file:"):
+            if isinstance(nid, str) and "::file:" in nid:
+                fp = nid.split("::file:", 1)[1].strip()
+            elif isinstance(nid, str) and nid.startswith("file:"):
                 fp = nid[5:].strip()
             elif isinstance(nid, str) and nid in g:
                 fp = str(g.nodes[nid].get("file_path") or "").strip()

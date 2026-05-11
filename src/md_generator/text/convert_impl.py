@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import json
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from md_generator.text.format_detect import detect_format
 from md_generator.text.md_emit_json import json_to_markdown
 from md_generator.text.md_emit_txt import txt_to_markdown
 from md_generator.text.md_emit_xml import xml_to_markdown
+from md_generator.text.md_flatten import json_flatten_to_markdown, xml_flatten_to_markdown
 from md_generator.text.options import ConvertOptions
+from md_generator.text.xml_parse import parse_xml_root
 
 ALLOWED_SUFFIXES = {".txt", ".json", ".xml"}
 ARTIFACT_MD_NAME = "document.md"
@@ -41,23 +42,46 @@ def convert_text_file(input_path: Path, output: Path, options: ConvertOptions) -
             obj = json.loads(text)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}") from e
-        md = json_to_markdown(
-            obj,
-            text,
-            include_source_block=options.include_source_block,
-            generate_toc=options.generate_toc,
-        )
+        if options.structure == "flattened":
+            md = json_flatten_to_markdown(
+                obj,
+                text,
+                include_source_block=options.include_source_block,
+                generate_toc=options.generate_toc,
+            )
+        else:
+            md = json_to_markdown(
+                obj,
+                text,
+                include_source_block=options.include_source_block,
+                generate_toc=options.generate_toc,
+            )
     elif fmt == "xml":
-        try:
-            root = ET.fromstring(text)
-        except ET.ParseError as e:
-            raise ValueError(f"Invalid XML: {e}") from e
-        md = xml_to_markdown(
-            root,
-            text,
-            include_source_block=options.include_source_block,
-            generate_toc=options.generate_toc,
-        )
+        if options.structure == "flattened":
+            try:
+                md = xml_flatten_to_markdown(
+                    text,
+                    text,
+                    include_source_block=options.include_source_block,
+                    generate_toc=options.generate_toc,
+                )
+            except ValueError:
+                raise
+            except Exception as e:
+                raise ValueError(f"Invalid XML (flattened parse): {e}") from e
+        else:
+            try:
+                root = parse_xml_root(text, options.xml_parser)
+            except ValueError:
+                raise
+            except Exception as e:
+                raise ValueError(f"Invalid XML: {e}") from e
+            md = xml_to_markdown(
+                root,
+                text,
+                include_source_block=options.include_source_block,
+                generate_toc=options.generate_toc,
+            )
     else:
         md = txt_to_markdown(text)
 

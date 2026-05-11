@@ -10,12 +10,20 @@ from pathlib import Path
 from typing import Any
 
 from md_generator.codeflow.analyzers.flow_analyzer import slice_from_entry
-from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, unique_predecessor_count
+from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, iter_multi_edges, unique_predecessor_count
 from md_generator.codeflow.detectors.entry_detector import apply_entry_detectors, resolve_entry_symbol_ids
 from md_generator.codeflow.detectors.entry_rank import sort_entry_ids
 from md_generator.codeflow.graph.builder import GraphBuildResult, build_graph, graph_to_serializable
 from md_generator.codeflow.graph.clustering import communities_for_mode, file_cluster_labels
+from md_generator.codeflow.graph.cluster_labeling import (
+    cluster_label_histogram_markdown,
+    file_cluster_label_strings,
+    stable_ordered_communities,
+)
+from md_generator.codeflow.graph import relations as graph_rel
+from md_generator.codeflow.graph.diff_analysis import PR_IMPACT_LIST_CAP, DiffAnalysisError, diff_impact_nodes, git_changed_files, nodes_touching_files
 from md_generator.codeflow.graph.event_graph import apply_event_edges
+from md_generator.codeflow.graph.multi_repo import merge_graphs, prefix_parse_results, repo_label
 from md_generator.codeflow.graph.query_engine import execute_query
 from md_generator.codeflow.graph.export_schema import to_stable_schema
 from md_generator.codeflow.generators.flow_tree import flow_tree_to_serializable
@@ -35,6 +43,7 @@ from md_generator.codeflow.generators.markdown import write_flow_markdown
 from md_generator.codeflow.generators.mermaid import write_flow_mermaid
 from md_generator.codeflow.generators.sequence import write_sequence_mermaid
 from md_generator.codeflow.ingestion.loader import LoadedWorkspace, collect_source_files
+from md_generator.codeflow.parsers.unified_parser import parse_source_file
 from md_generator.codeflow.lang_dispatch import lang_for_path, normalize_language_filter, should_parse_file_lang
 from md_generator.codeflow.models.ir import EntryRecord, FileParseResult
 from md_generator.codeflow.parsers.base import ParserRegistry, register_defaults
@@ -173,6 +182,7 @@ def _write_scan_summary(
     emitted_slugs: int,
     warnings: list[str],
     cfg: ScanConfig,
+    pr_impact: dict[str, Any] | None = None,
 ) -> None:
     lines = [
         "# Scan summary",
@@ -205,9 +215,15 @@ def _write_scan_summary(
         f"- **cfg_runtime_trace:** {str(cfg.cfg_runtime_trace) if cfg.cfg_runtime_trace else 'None'}",
         f"- **cfg_loop_repeat_prob:** {cfg.cfg_loop_repeat_prob}",
         f"- **graph_include_structural:** {cfg.graph_include_structural}",
+        f"- **enable_dependency_graph:** {cfg.enable_dependency_graph}",
+        f"- **structural_graph_enabled:** {cfg.structural_graph_enabled()}",
+        f"- **parser_mode:** `{cfg.parser_mode}`",
+        f"- **ui_cfg_max_methods:** {cfg.ui_cfg_max_methods}",
         f"- **intelligence_transitive_callers:** {cfg.intelligence_transitive_callers}",
         f"- **emit_system_graph_stats:** {cfg.emit_system_graph_stats}",
         f"- **emit_graph_sqlite:** {cfg.emit_graph_sqlite}",
+        f"- **graph_sqlite_mode:** `{cfg.graph_sqlite_mode}`",
+        f"- **graph_sqlite_prune_missing:** {cfg.graph_sqlite_prune_missing}",
         f"- **emit_graph_communities:** {cfg.emit_graph_communities}",
         f"- **include_references:** {cfg.include_references}",
         f"- **include_events:** {cfg.include_events}",
@@ -218,8 +234,34 @@ def _write_scan_summary(
         f"- **embedding_model:** `{cfg.embedding_model}`",
         f"- **semantic_top_k:** {cfg.semantic_top_k}",
         f"- **emit_html_unified:** {cfg.emit_html_unified}",
+        f"- **nl_query:** {repr(cfg.nl_query) if cfg.nl_query else 'None'}",
+        f"- **emit_runtime_insights:** {cfg.emit_runtime_insights}",
+        f"- **runtime_insight_frequency_threshold:** {cfg.runtime_insight_frequency_threshold}",
+        f"- **runtime_insight_hot_paths_top:** {cfg.runtime_insight_hot_paths_top}",
+        f"- **multi_repo_roots:** {len(cfg.multi_repo_roots)} extra root(s)",
+        f"- **resolve_cross_repo / cross_repo_tsconfig / cross_repo_maven_hints:** "
+        f"{cfg.resolve_cross_repo} / {cfg.cross_repo_tsconfig} / {cfg.cross_repo_maven_hints}",
+        f"- **graph_include_contains_reachability:** {cfg.graph_include_contains_reachability}",
+        f"- **diff_base / diff_head:** {repr(cfg.diff_base) if cfg.diff_base else 'None'} / {repr(cfg.diff_head) if cfg.diff_head else 'None'}",
         "",
     ]
+    if pr_impact:
+        sample_seeds = pr_impact.get("seed_nodes") or []
+        if isinstance(sample_seeds, list):
+            seed_preview = ", ".join(f"`{x}`" for x in sample_seeds[:8])
+        else:
+            seed_preview = ""
+        lines += [
+            "## PR impact",
+            "",
+            f"- **base → head:** `{pr_impact.get('base')}` → `{pr_impact.get('head')}`",
+            f"- **Changed files:** {pr_impact.get('changed_files_count', 0)}",
+            f"- **Seed nodes (files touched):** {pr_impact.get('seed_nodes_count', 0)}",
+            f"- **Impacted nodes (downstream reachability):** {pr_impact.get('impacted_nodes_count', 0)}",
+        ]
+        if seed_preview:
+            lines.append(f"- **Sample seeds:** {seed_preview}")
+        lines.append("")
     if warnings:
         lines.append("## Warnings")
         lines.append("")
@@ -249,6 +291,72 @@ def _write_scan_summary(
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _graph_and_parse_for_scan(
+    cfg: ScanConfig,
+    workspace: LoadedWorkspace | None,
+) -> tuple[CodeflowGraph, list[FileParseResult], LoadedWorkspace, str | None]:
+    """Return merged graph, combined parse results, primary workspace, and primary repo label (if multi-repo)."""
+    roots = [cfg.project_root.resolve(), *[Path(p).resolve() for p in cfg.multi_repo_roots]]
+    if len(roots) == 1:
+        ws_main = workspace or LoadedWorkspace(root=roots[0], cleanup_dir=None)
+        parse_results = _parse_results_for_workspace(ws_main, cfg)
+        enrich_parse_results_with_ir(parse_results, cfg, ws_main.root)
+        gb: GraphBuildResult = build_graph(
+            parse_results,
+            ws_main.root,
+            include_structural=cfg.structural_graph_enabled(),
+            include_references=cfg.include_references,
+        )
+        g = gb.graph
+        if cfg.include_events:
+            apply_event_edges(g, parse_results)
+        return g, parse_results, ws_main, None
+
+    used: set[str] = set()
+    labels: list[str] = []
+    graphs: list[CodeflowGraph] = []
+    all_parse: list[FileParseResult] = []
+    ws_main = workspace or LoadedWorkspace(root=roots[0], cleanup_dir=None)
+    for i, root in enumerate(roots):
+        lab = repo_label(root, i, used)
+        labels.append(lab)
+        ws_i = ws_main if i == 0 else LoadedWorkspace(root=root, cleanup_dir=None)
+        try:
+            pr_i = _parse_results_for_workspace(ws_i, cfg)
+            enrich_parse_results_with_ir(pr_i, cfg, root)
+            gb_i = build_graph(
+                pr_i,
+                root,
+                include_structural=cfg.structural_graph_enabled(),
+                include_references=cfg.include_references,
+            )
+            g_i = gb_i.graph
+            if cfg.include_events:
+                apply_event_edges(g_i, pr_i)
+            prefix_parse_results(pr_i, lab)
+            graphs.append(g_i)
+            all_parse.extend(pr_i)
+        finally:
+            if i > 0:
+                ws_i.close()
+    g_m = merge_graphs(graphs, labels)
+    if cfg.resolve_cross_repo:
+        from md_generator.codeflow.graph.cross_repo_resolver import resolve_cross_repo_imports
+        from md_generator.codeflow.graph.maven_hints import maven_group_hints_for_roots
+        from md_generator.codeflow.graph.tsconfig_cross_repo import collect_tsconfig_maps_by_repo_label
+
+        roots_labeled = list(zip(labels, roots, strict=True))
+        ts_maps = collect_tsconfig_maps_by_repo_label(roots_labeled) if cfg.cross_repo_tsconfig else None
+        mh = maven_group_hints_for_roots(roots_labeled) if cfg.cross_repo_maven_hints else None
+        resolve_cross_repo_imports(
+            g_m,
+            cfg.cross_repo_package_hints,
+            tsconfig_maps_by_repo=ts_maps,
+            maven_hints=mh,
+        )
+    return g_m, all_parse, ws_main, labels[0]
+
+
 def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[FileParseResult]:
     reg = ParserRegistry()
     register_defaults(reg)
@@ -259,7 +367,7 @@ def _parse_results_for_workspace(ws: LoadedWorkspace, cfg: ScanConfig) -> list[F
         lang = lang_for_path(p)
         if not should_parse_file_lang(lang, allowed):
             continue
-        pr = reg.parse_file(p, ws.root, lang)
+        pr = parse_source_file(reg, p, ws.root, lang, cfg.parser_mode)
         if pr:
             results.append(pr)
     apply_entry_detectors(files, ws.root, results, cfg)
@@ -274,19 +382,12 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
         logging.getLogger("md_generator.codeflow").setLevel(logging.DEBUG)
 
-    ws = workspace or LoadedWorkspace(root=cfg.project_root.resolve(), cleanup_dir=None)
+    if cfg.cache_clear_mode and str(cfg.cache_clear_mode).strip():
+        from md_generator.codeflow.core.cache_manager import apply_project_cache_clear
 
-    parse_results = _parse_results_for_workspace(ws, cfg)
-    enrich_parse_results_with_ir(parse_results, cfg, ws.root)
-    gb: GraphBuildResult = build_graph(
-        parse_results,
-        ws.root,
-        include_structural=cfg.graph_include_structural,
-        include_references=cfg.include_references,
-    )
-    g = gb.graph
-    if cfg.include_events:
-        apply_event_edges(g, parse_results)
+        apply_project_cache_clear(cfg.project_root.resolve(), str(cfg.cache_clear_mode).strip())
+
+    g, parse_results, ws, primary_repo_label = _graph_and_parse_for_scan(cfg, workspace)
 
     semantic_artifacts = None
     scan_semantic_warnings: list[str] = []
@@ -315,13 +416,45 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
     out = cfg.output_path
     out.mkdir(parents=True, exist_ok=True)
 
+    scan_warnings_pre: list[str] = []
+    pr_impact_payload: dict[str, Any] | None = None
+    pr_seeds: set[str] | None = None
+    pr_impacted: set[str] | None = None
+    if (cfg.diff_base and not cfg.diff_head) or (cfg.diff_head and not cfg.diff_base):
+        scan_warnings_pre.append("PR impact: set both diff_base and diff_head, or omit both.")
+    elif cfg.diff_base and cfg.diff_head:
+        try:
+            changed = git_changed_files(cfg.project_root.resolve(), cfg.diff_base, cfg.diff_head)
+            pr_seeds = nodes_touching_files(g, set(changed), primary_repo_label=primary_repo_label)
+            pr_impacted = diff_impact_nodes(
+                g,
+                pr_seeds,
+                include_contains=cfg.graph_include_contains_reachability,
+            )
+            pr_impact_payload = {
+                "base": cfg.diff_base,
+                "head": cfg.diff_head,
+                "changed_files": sorted(changed)[:PR_IMPACT_LIST_CAP],
+                "changed_files_count": len(changed),
+                "seed_nodes": sorted(pr_seeds)[:PR_IMPACT_LIST_CAP],
+                "seed_nodes_count": len(pr_seeds),
+                "impacted_nodes": sorted(pr_impacted)[:PR_IMPACT_LIST_CAP],
+                "impacted_nodes_count": len(pr_impacted),
+            }
+            (out / "pr-impact.json").write_text(json.dumps(pr_impact_payload, indent=2), encoding="utf-8")
+        except DiffAnalysisError as e:
+            scan_warnings_pre.append(f"PR impact (git diff): {e}")
+
     all_entries = [e for pr in parse_results for e in pr.entries]
     entry_ids, scan_warnings = _resolve_scan_entry_ids(cfg, g, all_entries)
+    scan_warnings = scan_warnings_pre + scan_warnings
     scan_warnings.extend(scan_semantic_warnings)
 
     fmts = {x.strip().lower() for x in cfg.formats}
 
     cluster_by_file: dict[str, int] | None = None
+    cluster_label_by_file: dict[str, str] | None = None
+    community_profiles: list[dict[str, Any]] | None = None
     comm_payload: list[Any] | None = None
     comm_algo: str | None = None
     if cfg.emit_graph_communities or "md" in fmts:
@@ -334,8 +467,12 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             semantic_labels=sem_labs,
             k_semantic=cfg.embedding_k_clusters,
         )
+        if comm_payload and cfg.emit_cluster_labels:
+            comm_payload, community_profiles = stable_ordered_communities(g, comm_payload, cfg.cluster_mode)
         if comm_payload and "md" in fmts:
             cluster_by_file = file_cluster_labels(g, comm_payload, cfg.cluster_mode)
+            if community_profiles:
+                cluster_label_by_file = file_cluster_label_strings(g, community_profiles)
 
     search_hits_list: list[dict[str, Any]] | None = None
     if semantic_artifacts:
@@ -384,6 +521,40 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
 
         method_cfgs_for_cfg = build_method_cfg_index(parse_results, cfg.cfg_max_nodes)
 
+    runtime_trace_obj: dict[str, Any] | None = None
+    if cfg.emit_cfg and cfg.cfg_runtime_trace and cfg.cfg_runtime_trace.is_file():
+        try:
+            _tr = json.loads(cfg.cfg_runtime_trace.read_text(encoding="utf-8"))
+            if isinstance(_tr, dict):
+                runtime_trace_obj = _tr
+        except (OSError, json.JSONDecodeError):
+            runtime_trace_obj = None
+
+    if cfg.emit_runtime_insights:
+        if not cfg.emit_cfg:
+            scan_warnings.append("emit_runtime_insights requires --emit-cfg.")
+        elif not cfg.cfg_runtime_trace or not cfg.cfg_runtime_trace.is_file():
+            scan_warnings.append("emit_runtime_insights requires --cfg-runtime-trace pointing to a JSON file.")
+        elif runtime_trace_obj is None:
+            scan_warnings.append("emit_runtime_insights: could not load or parse runtime trace JSON.")
+
+    if cfg.nl_query and str(cfg.nl_query).strip():
+        from md_generator.codeflow.graph.nl_query import execute_nl_intent, parse_nl_query
+
+        _nq = str(cfg.nl_query).strip()
+        _parsed = parse_nl_query(_nq)
+        _nqr = execute_nl_intent(
+            g,
+            _parsed,
+            semantic_artifacts=semantic_artifacts,
+            top_k=cfg.semantic_top_k,
+            list_cap=cfg.intelligence_list_cap,
+        )
+        (out / "nl-query-results.json").write_text(
+            json.dumps({"query": _nq, "parsed": dict(_parsed), "result": _nqr}, indent=2),
+            encoding="utf-8",
+        )
+
     for eid in entry_ids:
         if include_map:
             ndata = dict(g.nodes[eid]) if eid in g else {}
@@ -407,6 +578,11 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
         semantic_search_href: str | None = None
         if (out / "semantic-search-results.json").is_file():
             semantic_search_href = os.path.relpath(out / "semantic-search-results.json", sub).replace("\\", "/")
+        nl_query_href: str | None = None
+        if (out / "nl-query-results.json").is_file():
+            nl_query_href = os.path.relpath(out / "nl-query-results.json", sub).replace("\\", "/")
+        runtime_insights_payload: dict[str, Any] | None = None
+        rules = None
         if "md" in fmts:
             write_flow_markdown(
                 sub / "flow.md",
@@ -415,9 +591,9 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 g,
                 list_cap=cfg.intelligence_list_cap,
                 intelligence_transitive_callers=cfg.intelligence_transitive_callers,
-                graph_include_structural=cfg.graph_include_structural,
+                graph_include_structural=cfg.structural_graph_enabled(),
+                intelligence_include_contains=cfg.graph_include_contains_reachability,
             )
-            rules = None
             if cfg.business_rules:
                 from md_generator.codeflow.rules.collector import collect_business_rules
 
@@ -434,64 +610,6 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     rules,
                     entry_hint=eid,
                 )
-                write_entry_markdown(
-                    sub / "entry.md",
-                    eid,
-                    sl,
-                    g,
-                    rec,
-                    rules=rules,
-                    intelligence_cap=cfg.intelligence_list_cap,
-                    graph_include_structural=cfg.graph_include_structural,
-                    intelligence_transitive_callers=cfg.intelligence_transitive_callers,
-                    include_references=cfg.include_references,
-                    include_events=cfg.include_events,
-                    event_impact_section=cfg.event_impact,
-                    cluster_by_file=cluster_by_file,
-                    enable_embeddings=cfg.enable_embeddings,
-                    semantic_neighbors=neighbor_rows,
-                )
-                if cfg.business_rules_combined:
-                    write_combined_entry_markdown(
-                        sub / "entry.md",
-                        sub / "business_rules.md",
-                        sub / "entry.combined.md",
-                    )
-            else:
-                write_entry_markdown(
-                    sub / "entry.md",
-                    eid,
-                    sl,
-                    g,
-                    rec,
-                    rules=None,
-                    intelligence_cap=cfg.intelligence_list_cap,
-                    graph_include_structural=cfg.graph_include_structural,
-                    intelligence_transitive_callers=cfg.intelligence_transitive_callers,
-                    include_references=cfg.include_references,
-                    include_events=cfg.include_events,
-                    event_impact_section=cfg.event_impact,
-                    cluster_by_file=cluster_by_file,
-                    enable_embeddings=cfg.enable_embeddings,
-                    semantic_neighbors=neighbor_rows,
-                )
-            if eid in g:
-                k = rec.kind.value if rec else g.nodes[eid].get("entry_kind")
-            else:
-                k = rec.kind.value if rec else None
-            overview_rows.append(
-                (
-                    slug,
-                    type_label_for_kind(k),
-                    pretty_start_method(g, eid),
-                    f"[entry](./{link_prefix}{slug}/entry.md)",
-                    one_line_summary(sl, g),
-                ),
-            )
-            if cfg.emit_llm_entry_sidecar:
-                from md_generator.codeflow.generators.entry_markdown import write_llm_entry_sidecar
-
-                write_llm_entry_sidecar(sub, eid, emit_cfg=cfg.emit_cfg)
         if cfg.emit_flow_tree_json:
             (sub / "flow-tree.json").write_text(
                 json.dumps(flow_tree_to_serializable(eid, sl, g), indent=2),
@@ -553,6 +671,32 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                     truncated=path_res.truncated,
                     path_probabilities=path_probs,
                 )
+                if cfg.emit_runtime_insights and runtime_trace_obj is not None:
+                    from md_generator.codeflow.graph.anomaly import runtime_anomalies_payload, semantic_outlier_nodes
+                    from md_generator.codeflow.graph.hotpath import hot_paths_payload
+
+                    hp = hot_paths_payload(
+                        c,
+                        path_res.paths,
+                        runtime_trace_obj,
+                        top_n=cfg.runtime_insight_hot_paths_top,
+                        path_truncated=path_res.truncated,
+                    )
+                    an = runtime_anomalies_payload(
+                        c,
+                        runtime_trace_obj,
+                        frequency_threshold=cfg.runtime_insight_frequency_threshold,
+                    )
+                    runtime_insights_payload = {**hp, **an}
+                    if semantic_artifacts:
+                        runtime_insights_payload["semantic_outliers"] = semantic_outlier_nodes(
+                            semantic_artifacts,
+                            distance_threshold=cfg.semantic_outlier_distance_threshold,
+                        )
+                    (sub / "runtime-insights.json").write_text(
+                        json.dumps(runtime_insights_payload, indent=2),
+                        encoding="utf-8",
+                    )
                 if "md" in fmts:
                     flow_path = sub / "flow.md"
                     extra = (
@@ -571,6 +715,66 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                         )
                     )
                     flow_path.write_text(flow_path.read_text(encoding="utf-8") + "\n" + extra, encoding="utf-8")
+        if "md" in fmts:
+            pr_slice: dict[str, Any] | None = None
+            if pr_seeds is not None and pr_impacted is not None and pr_impact_payload:
+                n_sl = set(sl.nodes)
+                pr_href = os.path.relpath(out / "pr-impact.json", sub).replace("\\", "/")
+                pr_slice = {
+                    "base": pr_impact_payload["base"],
+                    "head": pr_impact_payload["head"],
+                    "changed_files_count": pr_impact_payload["changed_files_count"],
+                    "impacted_nodes_count": pr_impact_payload["impacted_nodes_count"],
+                    "seeds_in_slice_count": len(pr_seeds & n_sl),
+                    "seed_sample": sorted(pr_seeds & n_sl)[:10],
+                    "impacted_in_slice_count": len(pr_impacted & n_sl),
+                    "pr_impact_json_href": pr_href,
+                }
+            write_entry_markdown(
+                sub / "entry.md",
+                eid,
+                sl,
+                g,
+                rec,
+                rules=rules,
+                intelligence_cap=cfg.intelligence_list_cap,
+                graph_include_structural=cfg.structural_graph_enabled(),
+                intelligence_transitive_callers=cfg.intelligence_transitive_callers,
+                intelligence_include_contains=cfg.graph_include_contains_reachability,
+                include_references=cfg.include_references,
+                include_events=cfg.include_events,
+                event_impact_section=cfg.event_impact,
+                cluster_by_file=cluster_by_file,
+                cluster_label_by_file=cluster_label_by_file,
+                enable_embeddings=cfg.enable_embeddings,
+                semantic_neighbors=neighbor_rows,
+                nl_query_href=nl_query_href,
+                runtime_insights=runtime_insights_payload,
+                pr_impact_slice=pr_slice,
+            )
+            if cfg.business_rules and cfg.business_rules_combined and rules is not None:
+                write_combined_entry_markdown(
+                    sub / "entry.md",
+                    sub / "business_rules.md",
+                    sub / "entry.combined.md",
+                )
+            if eid in g:
+                k = rec.kind.value if rec else g.nodes[eid].get("entry_kind")
+            else:
+                k = rec.kind.value if rec else None
+            overview_rows.append(
+                (
+                    slug,
+                    type_label_for_kind(k),
+                    pretty_start_method(g, eid),
+                    f"[entry](./{link_prefix}{slug}/entry.md)",
+                    one_line_summary(sl, g),
+                ),
+            )
+            if cfg.emit_llm_entry_sidecar:
+                from md_generator.codeflow.generators.entry_markdown import write_llm_entry_sidecar
+
+                write_llm_entry_sidecar(sub, eid, emit_cfg=cfg.emit_cfg)
         if "mermaid" in fmts:
             write_flow_mermaid(sub / "flow.mmd", eid, sl)
             write_sequence_mermaid(sub / "sequence.mmd", eid, sl)
@@ -590,6 +794,31 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             pm_u = sub / "cfg.mmd"
             if pm_u.is_file():
                 cfg_mmd_u = pm_u.read_text(encoding="utf-8", errors="replace")
+            pr_html: dict[str, Any] | None = None
+            if pr_seeds is not None and pr_impacted is not None and pr_impact_payload:
+                n_sl = set(sl.nodes)
+                pr_href_u = os.path.relpath(out / "pr-impact.json", sub).replace("\\", "/")
+                pr_html = {
+                    "base": pr_impact_payload["base"],
+                    "head": pr_impact_payload["head"],
+                    "changed_files_count": pr_impact_payload["changed_files_count"],
+                    "seed_nodes_count": pr_impact_payload["seed_nodes_count"],
+                    "impacted_nodes_count": pr_impact_payload["impacted_nodes_count"],
+                    "seeds_in_slice_count": len(pr_seeds & n_sl),
+                    "impacted_in_slice_count": len(pr_impacted & n_sl),
+                    "pr_impact_json_href": pr_href_u,
+                    "seed_nodes": sorted(pr_seeds & n_sl)[:300],
+                    "impacted_nodes": sorted(pr_impacted & n_sl)[:800],
+                }
+            cfg_bundle: dict[str, dict[str, str]] = {}
+            if cfg.emit_cfg and cfg.emit_html_unified:
+                cfg_bundle = _build_cfg_mermaid_bundle_for_slice(
+                    set(sl.nodes),
+                    parse_results,
+                    cfg,
+                    method_cfgs_for_cfg,
+                    runtime_trace_obj,
+                )
             write_html_unified(
                 sub,
                 eid,
@@ -600,6 +829,12 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 search_hits=search_hits_list,
                 cluster_mode_note=cluster_mode_note,
                 semantic_search_results_href=semantic_search_href,
+                nl_query_href=nl_query_href,
+                runtime_insights=runtime_insights_payload,
+                pr_impact=pr_html,
+                cfg_by_symbol=cfg_bundle or None,
+                file_cluster_map=cluster_by_file,
+                file_cluster_label_map=cluster_label_by_file,
             )
 
     if "json" in fmts:
@@ -614,6 +849,8 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 "layer": cfg.cluster_mode,
                 "communities": comm_payload,
             }
+            if community_profiles:
+                body["community_profiles"] = community_profiles
             (out / "graph-communities.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
         if cfg.graph_query and cfg.graph_query.strip():
             rows = execute_query(g, cfg.graph_query.strip())
@@ -622,17 +859,54 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
                 encoding="utf-8",
             )
     if cfg.emit_graph_sqlite:
-        from md_generator.codeflow.graph.sqlite_export import export_graph_sqlite
+        from md_generator.codeflow.graph.sqlite_export import export_graph_sqlite, export_graph_sqlite_incremental
 
-        export_graph_sqlite(out / "graph.db", g)
+        dbp = out / "graph.db"
+        if cfg.graph_sqlite_mode == "incremental":
+            export_graph_sqlite_incremental(
+                dbp,
+                g,
+                project_key=str(ws.root.resolve()),
+                prune_missing=cfg.graph_sqlite_prune_missing,
+            )
+        else:
+            export_graph_sqlite(dbp, g)
 
     if "md" in fmts and overview_rows:
+        overview_extra: list[str] = []
+        if pr_impact_payload:
+            overview_extra += [
+                "## PR impact (scan)",
+                "",
+                f"- **base → head:** `{pr_impact_payload['base']}` → `{pr_impact_payload['head']}`",
+                f"- **Changed files:** {pr_impact_payload['changed_files_count']}",
+                f"- **Seed nodes (files touched):** {pr_impact_payload['seed_nodes_count']}",
+                f"- **Impacted nodes (reachability):** {pr_impact_payload['impacted_nodes_count']}",
+                "- **Detail:** [pr-impact.json](./pr-impact.json)",
+                "",
+            ]
+        xrepo_n = sum(
+            1
+            for _u, _v, _k, d in iter_multi_edges(g)
+            if d.get("relation") == graph_rel.REL_CROSS_REPO_IMPORT
+        )
+        if xrepo_n:
+            overview_extra += [
+                "## Cross-repo graph",
+                "",
+                f"- **CROSS_REPO_IMPORT edges:** {xrepo_n}",
+                "",
+            ]
+        if community_profiles and cfg.emit_cluster_labels:
+            overview_extra.extend(cluster_label_histogram_markdown(community_profiles))
         write_system_overview(
             out / "system_overview.md",
             overview_rows,
             project_hint=f"Project: `{ws.root.resolve().as_posix()}`",
             graph=g if cfg.emit_system_graph_stats else None,
             emit_graph_stats=cfg.emit_system_graph_stats,
+            graph_reachability_include_contains=cfg.graph_include_contains_reachability,
+            extra_sections=overview_extra or None,
         )
 
     if cfg.write_scan_summary:
@@ -645,8 +919,91 @@ def run_scan(cfg: ScanConfig, *, workspace: LoadedWorkspace | None = None) -> Pa
             emitted_slugs=emitted_slugs,
             warnings=scan_warnings,
             cfg=cfg,
+            pr_impact=pr_impact_payload,
         )
 
+    return out
+
+
+def _build_cfg_mermaid_bundle_for_slice(
+    slice_nodes: set[str],
+    parse_results: list[FileParseResult],
+    cfg: ScanConfig,
+    method_cfgs_for_cfg: dict[str, Any] | None,
+    runtime_trace: dict[str, Any] | None,
+) -> dict[str, dict[str, str]]:
+    """Precompute Mermaid CFG text and path Markdown (aligned with cfg-paths.md) for unified HTML."""
+    if not cfg.emit_cfg:
+        return {}
+    from md_generator.codeflow.graph.call_expander import expand_cfg_calls
+    from md_generator.codeflow.graph.cfg_builder import build_cfg_from_ir
+    from md_generator.codeflow.graph.path_enumerator import PathResult, enumerate_paths, find_cfg_end_id, find_cfg_start_id
+    from md_generator.codeflow.graph.path_probability import PathProbConfig, score_paths
+    from md_generator.codeflow.graph.runtime_integration import apply_runtime_weights
+    from md_generator.codeflow.generators.cfg_paths_markdown import paths_to_markdown
+    from md_generator.codeflow.generators.cfg_render import cfg_to_mermaid
+
+    out: dict[str, dict[str, str]] = {}
+    prob_conf = PathProbConfig(loop_repeat=max(0.01, min(0.99, float(cfg.cfg_loop_repeat_prob))))
+    max_paths_html = 40
+    n = 0
+    for nid in sorted(slice_nodes, key=str):
+        if n >= cfg.ui_cfg_max_methods:
+            break
+        sid = str(nid)
+        ir_m = _lookup_ir_method(sid, parse_results)
+        if ir_m is None:
+            continue
+        c = build_cfg_from_ir(ir_m, max_nodes=cfg.cfg_max_nodes)
+        c = expand_cfg_calls(
+            c,
+            method_cfgs_for_cfg or {},
+            max_call_depth=cfg.cfg_call_depth,
+            inline_calls=cfg.cfg_inline_calls,
+        )
+        if runtime_trace:
+            try:
+                apply_runtime_weights(c, runtime_trace)
+            except (TypeError, ValueError, KeyError):
+                pass
+        mmd = cfg_to_mermaid(
+            c,
+            show_edge_probability=cfg.cfg_mermaid_probabilities,
+            prob_config=prob_conf,
+        )
+        sid_start = find_cfg_start_id(c)
+        eid_end = find_cfg_end_id(c)
+        path_res = (
+            enumerate_paths(
+                c,
+                sid_start,
+                eid_end,
+                max_paths=cfg.cfg_max_paths,
+                max_depth=cfg.cfg_path_max_depth,
+                max_loop_visits=cfg.cfg_loop_visits,
+            )
+            if sid_start and eid_end
+            else PathResult()
+        )
+        path_probs: list[float] | None = None
+        paths_for_html = path_res.paths
+        if cfg.cfg_probability and path_res.paths:
+            path_probs = [pr for _p, pr in score_paths(c, path_res.paths, prob_conf)]
+        truncated_paths = path_res.truncated
+        if len(paths_for_html) > max_paths_html:
+            paths_for_html = paths_for_html[:max_paths_html]
+            if path_probs is not None:
+                path_probs = path_probs[:max_paths_html]
+            truncated_paths = True
+        paths_md = paths_to_markdown(
+            c,
+            paths_for_html,
+            c.nodes,
+            truncated=truncated_paths,
+            path_probabilities=path_probs,
+        )
+        out[sid] = {"mermaid": mmd, "paths_md": paths_md}
+        n += 1
     return out
 
 

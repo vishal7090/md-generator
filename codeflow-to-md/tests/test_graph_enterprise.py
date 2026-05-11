@@ -15,7 +15,7 @@ from md_generator.codeflow.graph.builder import build_graph
 from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
 from md_generator.codeflow.graph import relations as rel
 from md_generator.codeflow.graph.multigraph_utils import edge_data_dicts
-from md_generator.codeflow.graph.sqlite_export import export_graph_sqlite
+from md_generator.codeflow.graph.sqlite_export import export_graph_sqlite, export_graph_sqlite_incremental
 from md_generator.codeflow.models.ir import FileParseResult, StructuralEdge
 
 
@@ -66,6 +66,48 @@ def test_greedy_modularity_file_triangle() -> None:
     comms = greedy_modularity_file_communities(g)
     assert len(comms) >= 1
     assert {n for c in comms for n in c} == {"file:a.java", "file:b.java", "file:c.java"}
+
+
+def test_export_graph_sqlite_incremental_merge_and_prune(tmp_path: Path) -> None:
+    dbp = tmp_path / "g.db"
+    g1 = nx.DiGraph()
+    g1.add_node("a", type="method")
+    g1.add_node("b", type="method")
+    g1.add_edge("a", "b", relation=rel.REL_CALLS, confidence=1.0)
+    s1 = export_graph_sqlite_incremental(dbp, g1, project_key="p1", prune_missing=False)
+    assert s1 == 1
+    conn = sqlite3.connect(str(dbp))
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0] == 2
+    finally:
+        conn.close()
+
+    g2 = nx.DiGraph()
+    g2.add_node("b", type="method")
+    g2.add_node("c", type="method")
+    g2.add_edge("b", "c", relation=rel.REL_CALLS, confidence=1.0)
+    s2 = export_graph_sqlite_incremental(dbp, g2, project_key="p1", prune_missing=False)
+    assert s2 == 2
+    conn = sqlite3.connect(str(dbp))
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0] == 3
+        assert conn.execute("SELECT last_seen_scan_id FROM nodes WHERE id='a'").fetchone()[0] == 1
+        assert conn.execute("SELECT last_seen_scan_id FROM nodes WHERE id='c'").fetchone()[0] == 2
+    finally:
+        conn.close()
+
+    g3 = nx.DiGraph()
+    g3.add_node("c", type="method")
+    s3 = export_graph_sqlite_incremental(dbp, g3, project_key="p1", prune_missing=True)
+    assert s3 == 3
+    conn = sqlite3.connect(str(dbp))
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0] == 1
+        assert conn.execute("SELECT id FROM nodes").fetchone()[0] == "c"
+    finally:
+        conn.close()
 
 
 def test_export_graph_sqlite_counts(tmp_path: Path) -> None:

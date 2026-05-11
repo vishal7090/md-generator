@@ -39,6 +39,19 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Insert a table of contents for JSON/XML section headings",
     )
+    p.add_argument(
+        "--structure",
+        choices=("hierarchical", "flattened"),
+        default="hierarchical",
+        help="JSON/XML: nested headings (default) or flattened paths grouped as headings",
+    )
+    p.add_argument(
+        "--xml-parser",
+        choices=("auto", "stdlib", "lxml"),
+        default="auto",
+        dest="xml_parser",
+        help="XML hierarchical mode only: parse with stdlib, lxml, or auto (prefer lxml if installed)",
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
@@ -51,6 +64,8 @@ def _options_from_args(ns: argparse.Namespace) -> ConvertOptions:
         input_format=ns.input_format,
         include_source_block=not ns.no_source_block,
         generate_toc=ns.toc,
+        structure=ns.structure,
+        xml_parser=ns.xml_parser,
     )
 
 

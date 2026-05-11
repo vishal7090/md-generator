@@ -218,19 +218,19 @@ python pdf-to-md\converter.py input.pdf out.md
 PYTHONPATH=src python pdf-to-md/converter.py input.pdf out.md
 ```
 
-### 6. Convert every file in `docs/` (strictly command-line)
+### 6. Convert every file in `example/` (strictly command-line)
 
-To process **all supported files** under the [`docs/`](docs/) folder using only the installed **`md-*`** tools (no Python snippets), use the batch driver:
+To process **all supported files** under the [`example/`](example/) folder using only the installed **`md-*`** tools (no Python snippets), use the batch driver:
 
 | Platform | Command (run from **repository root** unless noted) |
 |----------|------------------------------------------------------|
 | Windows | `powershell -ExecutionPolicy Bypass -File scripts/run-docs-cli.ps1` |
-| Windows | Or double-click / run [`docs/run-all-cli.cmd`](docs/run-all-cli.cmd) (changes to repo root, then runs the script on `docs\`) |
+| Windows | Or double-click / run [`example/run-all-cli.cmd`](example/run-all-cli.cmd) (changes to repo root, then runs the script on `example\`) |
 | macOS / Linux | `bash scripts/run-docs-cli.sh` |
 
 Optional environment variables for the shell script: `DOCS_DIR`, `OUT_DIR`, `IMAGE_ENGINES` (default `tess`). PowerShell script parameters: `-DocsDir`, `-OutDir`, `-ImageEngines`.
 
-Outputs are written to **`docs/cli-output/<basename>/`** (one subfolder per input file). **`.csv`** files are converted with **`md-xlsx`** (same engine as Excel). **`.md`** files are skipped.
+Outputs are written to **`example/cli-output/<basename>/`** (one subfolder per input file). **`.csv`** files are converted with **`md-xlsx`** (same engine as Excel). **`.md`** files are skipped.
 
 ---
 

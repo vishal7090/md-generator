@@ -53,7 +53,19 @@ class AnalyzeOptions(BaseModel):
     intelligence_transitive_callers: bool | None = None
     emit_system_graph_stats: bool | None = None
     emit_graph_sqlite: bool | None = None
+    graph_sqlite_mode: Literal["full", "incremental"] | None = Field(
+        default=None,
+        description="full replaces graph.db; incremental upserts rows and records scans",
+    )
+    graph_sqlite_prune_missing: bool | None = Field(
+        default=None,
+        description="incremental mode: delete nodes/edges not seen in latest scan",
+    )
     emit_graph_communities: bool | None = None
+    emit_cluster_labels: bool | None = Field(
+        default=None,
+        description="Rule-based community labels in graph-communities.json and Markdown (default true)",
+    )
     emit_llm_entry_sidecar: bool | None = None
     include_references: bool | None = None
     include_events: bool | None = None
@@ -72,6 +84,44 @@ class AnalyzeOptions(BaseModel):
     semantic_top_k: int | None = None
     semantic_search: str | None = None
     emit_html_unified: bool | None = None
+    nl_query: str | None = None
+    emit_runtime_insights: bool | None = None
+    runtime_insight_frequency_threshold: float | None = None
+    runtime_insight_hot_paths_top: int | None = None
+    semantic_outlier_distance_threshold: float | None = None
+    multi_repo: str | None = Field(
+        default=None,
+        description="Comma-separated extra repository roots to merge with workspace (first root is workspace)",
+    )
+    diff_base: str | None = Field(default=None, description="Git ref/SHA for PR diff (with diff_head)")
+    diff_head: str | None = Field(default=None, description="Git ref/SHA for PR diff (with diff_base)")
+    cross_repo_package_hints: str | None = Field(
+        default=None,
+        description='JSON object mapping package prefix to repo label, e.g. {"com.foo":"repo_a"}',
+    )
+    resolve_cross_repo: bool | None = Field(default=None, description="Resolve external:: imports across merged repos (hints JSON)")
+    cross_repo_tsconfig: bool | None = Field(
+        default=None,
+        description="Use tsconfig/jsconfig paths per repo for @… cross-repo matching (with resolve_cross_repo)",
+    )
+    cross_repo_maven_hints: bool | None = Field(
+        default=None,
+        description="Add Maven groupId→repo hints from pom.xml (with resolve_cross_repo; explicit hints win)",
+    )
+    cache_enabled: bool | None = Field(default=None, description="Enable git TTL metadata and unified cache writes")
+    cache_ttl_seconds: int | None = Field(default=None, description="Git clone refresh skip window in seconds (0=off)")
+    cache_clear_mode: str | None = Field(
+        default=None,
+        description="semantic | unified | all (project cache); git/all also clears global git cache at API boundary if set",
+    )
+    graph_include_contains_reachability: bool | None = Field(
+        default=None,
+        description="Include REL_CONTAINS in dependency reachability (PR impact, Called by, Impact)",
+    )
+    enable_dependency_graph: bool | None = Field(default=None, description="Alias: enable structural IMPORTS/dependency merge")
+    parser_mode: Literal["auto", "treesitter", "external"] | None = None
+    ui_cfg_max_methods: int | None = Field(default=None, description="Max CFG Mermaid payloads embedded in unified HTML")
+    ui: str | None = Field(default=None, description="Set unified to enable emit_html_unified")
 
 
 def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: AnalyzeOptions | None) -> ScanConfig:
@@ -129,7 +179,19 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     itc = False if not raw or raw.intelligence_transitive_callers is None else bool(raw.intelligence_transitive_callers)
     esgs = False if not raw or raw.emit_system_graph_stats is None else bool(raw.emit_system_graph_stats)
     egsql = False if not raw or raw.emit_graph_sqlite is None else bool(raw.emit_graph_sqlite)
+    gsm: Literal["full", "incremental"] = (
+        "full" if not raw or raw.graph_sqlite_mode is None else raw.graph_sqlite_mode  # type: ignore[assignment]
+    )
+    gsp = False if not raw or raw.graph_sqlite_prune_missing is None else bool(raw.graph_sqlite_prune_missing)
+    gicr = (
+        False
+        if not raw or raw.graph_include_contains_reachability is None
+        else bool(raw.graph_include_contains_reachability)
+    )
+    xc_ts = False if not raw or raw.cross_repo_tsconfig is None else bool(raw.cross_repo_tsconfig)
+    xmvn = False if not raw or raw.cross_repo_maven_hints is None else bool(raw.cross_repo_maven_hints)
     egc = False if not raw or raw.emit_graph_communities is None else bool(raw.emit_graph_communities)
+    ecl = True if not raw or raw.emit_cluster_labels is None else bool(raw.emit_cluster_labels)
     ellm = False if not raw or raw.emit_llm_entry_sidecar is None else bool(raw.emit_llm_entry_sidecar)
     iref = False if not raw or raw.include_references is None else bool(raw.include_references)
     ievt = False if not raw or raw.include_events is None else bool(raw.include_events)
@@ -148,6 +210,36 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
     stk = 10 if not raw or raw.semantic_top_k is None else int(raw.semantic_top_k)
     ssr = None if not raw or raw.semantic_search is None or not str(raw.semantic_search).strip() else str(raw.semantic_search).strip()
     ehu = False if not raw or raw.emit_html_unified is None else bool(raw.emit_html_unified)
+    if raw and raw.ui and str(raw.ui).strip().lower() == "unified":
+        ehu = True
+    nlq = None if not raw or raw.nl_query is None or not str(raw.nl_query).strip() else str(raw.nl_query).strip()
+    eri = False if not raw or raw.emit_runtime_insights is None else bool(raw.emit_runtime_insights)
+    rift = 0.05 if not raw or raw.runtime_insight_frequency_threshold is None else float(raw.runtime_insight_frequency_threshold)
+    riht = 5 if not raw or raw.runtime_insight_hot_paths_top is None else int(raw.runtime_insight_hot_paths_top)
+    sodt = 0.7 if not raw or raw.semantic_outlier_distance_threshold is None else float(raw.semantic_outlier_distance_threshold)
+    edg = False if not raw or raw.enable_dependency_graph is None else bool(raw.enable_dependency_graph)
+    pm: Literal["auto", "treesitter", "external"] = (
+        "auto" if not raw or raw.parser_mode is None else raw.parser_mode  # type: ignore[assignment]
+    )
+    uic = 25 if not raw or raw.ui_cfg_max_methods is None else int(raw.ui_cfg_max_methods)
+    multi_roots: tuple[Path, ...] = ()
+    if raw and raw.multi_repo and str(raw.multi_repo).strip():
+        parts = [x.strip() for x in str(raw.multi_repo).split(",") if x.strip()]
+        multi_roots = tuple((workspace_src / p).resolve() if not Path(p).is_absolute() else Path(p).resolve() for p in parts)
+    db = None if not raw or raw.diff_base is None or not str(raw.diff_base).strip() else str(raw.diff_base).strip()
+    dh = None if not raw or raw.diff_head is None or not str(raw.diff_head).strip() else str(raw.diff_head).strip()
+    cr_hints: dict[str, str] | None = None
+    if raw and raw.cross_repo_package_hints and str(raw.cross_repo_package_hints).strip():
+        try:
+            obj = json.loads(str(raw.cross_repo_package_hints).strip())
+            if isinstance(obj, dict):
+                cr_hints = {str(k): str(v) for k, v in obj.items()}
+        except json.JSONDecodeError:
+            cr_hints = None
+    rcr = False if not raw or raw.resolve_cross_repo is None else bool(raw.resolve_cross_repo)
+    c_en = True if not raw or raw.cache_enabled is None else bool(raw.cache_enabled)
+    c_ttl = 0 if not raw or raw.cache_ttl_seconds is None else int(raw.cache_ttl_seconds)
+    c_cm = None if not raw or raw.cache_clear_mode is None else str(raw.cache_clear_mode).strip() or None
     return ScanConfig(
         project_root=workspace_src,
         output_path=workspace_src.parent / output_subdir,
@@ -202,11 +294,33 @@ def options_to_scan_config(workspace_src: Path, output_subdir: str, raw: Analyze
         semantic_top_k=stk,
         semantic_search=ssr,
         emit_html_unified=ehu,
+        nl_query=nlq,
+        emit_runtime_insights=eri,
+        runtime_insight_frequency_threshold=rift,
+        runtime_insight_hot_paths_top=riht,
+        semantic_outlier_distance_threshold=sodt,
         intelligence_transitive_callers=itc,
         emit_system_graph_stats=esgs,
         emit_graph_sqlite=egsql,
+        graph_sqlite_mode=gsm,
+        graph_sqlite_prune_missing=gsp,
         emit_graph_communities=egc,
+        emit_cluster_labels=ecl,
         emit_llm_entry_sidecar=ellm,
+        multi_repo_roots=multi_roots,
+        diff_base=db,
+        diff_head=dh,
+        cross_repo_package_hints=cr_hints,
+        resolve_cross_repo=rcr,
+        cross_repo_tsconfig=xc_ts,
+        cross_repo_maven_hints=xmvn,
+        graph_include_contains_reachability=gicr,
+        cache_enabled=c_en,
+        cache_ttl_seconds=c_ttl,
+        cache_clear_mode=c_cm,
+        enable_dependency_graph=edg,
+        parser_mode=pm,
+        ui_cfg_max_methods=uic,
     )
 
 
@@ -263,7 +377,10 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "intelligence_transitive_callers": cfg.intelligence_transitive_callers,
         "emit_system_graph_stats": cfg.emit_system_graph_stats,
         "emit_graph_sqlite": cfg.emit_graph_sqlite,
+        "graph_sqlite_mode": cfg.graph_sqlite_mode,
+        "graph_sqlite_prune_missing": cfg.graph_sqlite_prune_missing,
         "emit_graph_communities": cfg.emit_graph_communities,
+        "emit_cluster_labels": cfg.emit_cluster_labels,
         "emit_llm_entry_sidecar": cfg.emit_llm_entry_sidecar,
         "include_references": cfg.include_references,
         "include_events": cfg.include_events,
@@ -282,6 +399,25 @@ def scan_config_dump(cfg: ScanConfig) -> dict[str, Any]:
         "semantic_top_k": cfg.semantic_top_k,
         "semantic_search": cfg.semantic_search,
         "emit_html_unified": cfg.emit_html_unified,
+        "nl_query": cfg.nl_query,
+        "emit_runtime_insights": cfg.emit_runtime_insights,
+        "runtime_insight_frequency_threshold": cfg.runtime_insight_frequency_threshold,
+        "runtime_insight_hot_paths_top": cfg.runtime_insight_hot_paths_top,
+        "semantic_outlier_distance_threshold": cfg.semantic_outlier_distance_threshold,
+        "multi_repo_roots": [str(p) for p in cfg.multi_repo_roots],
+        "diff_base": cfg.diff_base,
+        "diff_head": cfg.diff_head,
+        "cross_repo_package_hints": dict(cfg.cross_repo_package_hints) if cfg.cross_repo_package_hints else None,
+        "resolve_cross_repo": cfg.resolve_cross_repo,
+        "cross_repo_tsconfig": cfg.cross_repo_tsconfig,
+        "cross_repo_maven_hints": cfg.cross_repo_maven_hints,
+        "graph_include_contains_reachability": cfg.graph_include_contains_reachability,
+        "cache_enabled": cfg.cache_enabled,
+        "cache_ttl_seconds": cfg.cache_ttl_seconds,
+        "cache_clear_mode": cfg.cache_clear_mode,
+        "enable_dependency_graph": cfg.enable_dependency_graph,
+        "parser_mode": cfg.parser_mode,
+        "ui_cfg_max_methods": cfg.ui_cfg_max_methods,
     }
 
 
@@ -332,7 +468,10 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         intelligence_transitive_callers=bool(data.get("intelligence_transitive_callers", False)),
         emit_system_graph_stats=bool(data.get("emit_system_graph_stats", False)),
         emit_graph_sqlite=bool(data.get("emit_graph_sqlite", False)),
+        graph_sqlite_mode=data.get("graph_sqlite_mode", "full"),  # type: ignore[arg-type]
+        graph_sqlite_prune_missing=bool(data.get("graph_sqlite_prune_missing", False)),
         emit_graph_communities=bool(data.get("emit_graph_communities", False)),
+        emit_cluster_labels=bool(data.get("emit_cluster_labels", True)),
         emit_llm_entry_sidecar=bool(data.get("emit_llm_entry_sidecar", False)),
         include_references=bool(data.get("include_references", False)),
         include_events=bool(data.get("include_events", False)),
@@ -351,6 +490,29 @@ def scan_config_load(data: dict[str, Any]) -> ScanConfig:
         semantic_top_k=int(data.get("semantic_top_k", 10)),
         semantic_search=data.get("semantic_search"),
         emit_html_unified=bool(data.get("emit_html_unified", False)),
+        nl_query=data.get("nl_query"),
+        emit_runtime_insights=bool(data.get("emit_runtime_insights", False)),
+        runtime_insight_frequency_threshold=float(data.get("runtime_insight_frequency_threshold", 0.05)),
+        runtime_insight_hot_paths_top=int(data.get("runtime_insight_hot_paths_top", 5)),
+        semantic_outlier_distance_threshold=float(data.get("semantic_outlier_distance_threshold", 0.7)),
+        multi_repo_roots=tuple(Path(p) for p in (data.get("multi_repo_roots") or [])),
+        diff_base=data.get("diff_base"),
+        diff_head=data.get("diff_head"),
+        cross_repo_package_hints=(
+            {str(k): str(v) for k, v in data["cross_repo_package_hints"].items()}
+            if isinstance(data.get("cross_repo_package_hints"), dict)
+            else None
+        ),
+        resolve_cross_repo=bool(data.get("resolve_cross_repo", False)),
+        cross_repo_tsconfig=bool(data.get("cross_repo_tsconfig", False)),
+        cross_repo_maven_hints=bool(data.get("cross_repo_maven_hints", False)),
+        graph_include_contains_reachability=bool(data.get("graph_include_contains_reachability", False)),
+        cache_enabled=bool(data.get("cache_enabled", True)),
+        cache_ttl_seconds=int(data.get("cache_ttl_seconds", 0)),
+        cache_clear_mode=data.get("cache_clear_mode"),
+        enable_dependency_graph=bool(data.get("enable_dependency_graph", False)),
+        parser_mode=data.get("parser_mode", "auto"),  # type: ignore[arg-type]
+        ui_cfg_max_methods=int(data.get("ui_cfg_max_methods", 25)),
     )
 
 

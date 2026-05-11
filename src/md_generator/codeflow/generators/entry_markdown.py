@@ -13,6 +13,7 @@ from md_generator.codeflow.graph.analysis import event_flow_edges, event_impact,
 from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph, iter_multi_edges, iter_out_edges
 from md_generator.codeflow.generators.flow_summary import format_flow_description, format_method_summary_lines
 from md_generator.codeflow.graph import relations as graph_rel
+from md_generator.codeflow.graph.dependency_builder import class_structural_successors, file_import_successors
 from md_generator.codeflow.graph.enricher import (
     called_by_direct,
     called_by_transitive,
@@ -24,6 +25,50 @@ from md_generator.codeflow.models.ir import BusinessRule, EntryKind, EntryRecord
 
 def _md_escape(s: str) -> str:
     return s.replace("|", "\\|")
+
+
+def _file_node_for_entry(g: CodeflowGraph, entry_id: str) -> str | None:
+    if entry_id not in g:
+        return None
+    d = g.nodes[entry_id]
+    fp = str(d.get("file_path") or "").replace("\\", "/")
+    if not fp:
+        return None
+    repo = d.get("repo")
+    if isinstance(repo, str) and repo.strip():
+        nid = f"{repo.strip()}::file:{fp}"
+        if nid in g:
+            return nid
+    fid = f"file:{fp}"
+    return fid if fid in g else None
+
+
+def _cross_repo_import_bullets(g: CodeflowGraph, entry_id: str, cap: int) -> list[str]:
+    fid = _file_node_for_entry(g, entry_id)
+    if not fid or fid not in g:
+        return []
+    out: list[str] = []
+    for _u, v, _k, d in iter_out_edges(g, fid):
+        if d.get("relation") != graph_rel.REL_CROSS_REPO_IMPORT:
+            continue
+        out.append(f"- `{_md_escape(str(v))}`")
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _class_vertex_for_method(entry_id: str, g: CodeflowGraph) -> str | None:
+    if entry_id not in g:
+        return None
+    fp = str(g.nodes[entry_id].get("file_path") or "").replace("\\", "/")
+    if not fp or "::" not in entry_id:
+        return None
+    tail = entry_id.split("::", 1)[-1]
+    if "." not in tail:
+        return None
+    cls, _m = tail.rsplit(".", 1)
+    cid = f"class:{fp}::{cls}"
+    return cid if cid in g else None
 
 
 def _event_chain_lines(g: CodeflowGraph, entry_id: str, cap: int) -> list[str]:
@@ -166,7 +211,13 @@ def _graph_inventory_lines(graph: CodeflowGraph, top_n: int = 10) -> list[str]:
     return lines
 
 
-def _system_graph_insights_lines(graph: CodeflowGraph, *, top_n: int = 10, community_preview: int = 8) -> list[str]:
+def _system_graph_insights_lines(
+    graph: CodeflowGraph,
+    *,
+    top_n: int = 10,
+    community_preview: int = 8,
+    include_contains: bool = False,
+) -> list[str]:
     """Top modules, file import layer, high-impact symbols, modularity communities."""
     from md_generator.codeflow.graph.analysis import dependency_reachability_subgraph
     from md_generator.codeflow.graph.clustering import greedy_modularity_file_communities
@@ -212,11 +263,12 @@ def _system_graph_insights_lines(graph: CodeflowGraph, *, top_n: int = 10, commu
     lines += [
         "### Most impacted nodes (approx.)",
         "",
-        "Largest downstream reach in the **dependency reachability** graph (CONTAINS excluded); "
-        "candidate set capped for performance.",
+        "Largest downstream reach in the **dependency reachability** graph ("
+        f"{'CONTAINS included' if include_contains else 'CONTAINS excluded'}"
+        "); candidate set capped for performance.",
         "",
     ]
-    dg = dependency_reachability_subgraph(graph)
+    dg = dependency_reachability_subgraph(graph, include_contains=include_contains)
     candidates: list[str] = []
     for n, d in graph.nodes(data=True):
         if not isinstance(n, str) or "::" not in n or n.startswith("unknown::"):
@@ -282,12 +334,17 @@ def write_entry_markdown(
     intelligence_cap: int = 80,
     graph_include_structural: bool = False,
     intelligence_transitive_callers: bool = False,
+    intelligence_include_contains: bool = False,
     include_references: bool = False,
     include_events: bool = False,
     event_impact_section: bool = False,
     cluster_by_file: dict[str, int] | None = None,
+    cluster_label_by_file: dict[str, str] | None = None,
     enable_embeddings: bool = False,
     semantic_neighbors: list[dict[str, Any]] | None = None,
+    nl_query_href: str | None = None,
+    runtime_insights: dict[str, Any] | None = None,
+    pr_impact_slice: dict[str, Any] | None = None,
 ) -> None:
     lines: list[str] = []
     lines.append("# Execution Flow Documentation")
@@ -310,6 +367,29 @@ def write_entry_markdown(
     lines.append("")
     lines.append(type_label_for_kind(kind))
     lines.append("")
+    if pr_impact_slice:
+        lines.append("## PR impact (git diff)")
+        lines.append("")
+        lines.append(
+            f"- **Base → head:** `{pr_impact_slice.get('base')}` → `{pr_impact_slice.get('head')}`",
+        )
+        lines.append(f"- **Changed files (scan):** {pr_impact_slice.get('changed_files_count', 0)}")
+        lines.append(
+            f"- **Impacted nodes (scan, reachability):** {pr_impact_slice.get('impacted_nodes_count', 0)}",
+        )
+        lines.append(f"- **Seeds in this flow slice:** {pr_impact_slice.get('seeds_in_slice_count', 0)}")
+        ss = pr_impact_slice.get("seed_sample") or []
+        if ss:
+            lines.append("- **Sample seeds in slice:**")
+            for s in ss:
+                lines.append(f"  - `{_md_escape(str(s))}`")
+        lines.append(
+            f"- **Impacted nodes in this slice:** {pr_impact_slice.get('impacted_in_slice_count', 0)}",
+        )
+        href = pr_impact_slice.get("pr_impact_json_href")
+        if isinstance(href, str) and href.strip():
+            lines.append(f"- **Full payload:** [{href.strip()}]({href.strip()})")
+        lines.append("")
     lines.append("## Flow Description")
     lines.append("")
     lines.extend(format_flow_description(sl, g))
@@ -320,17 +400,33 @@ def write_entry_markdown(
     lines.append("")
 
     if intelligence_transitive_callers:
-        cb = called_by_transitive(g, entry_id, intelligence_cap)
+        cb = called_by_transitive(
+            g,
+            entry_id,
+            intelligence_cap,
+            include_contains=intelligence_include_contains,
+        )
         cb_blurb = (
             "*Transitive upstream (`nx.ancestors` on dependency reachability: CALLS + structural edges; "
-            "CONTAINS excluded; capped).*"
+            f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; capped).*"
         )
     else:
-        cb = called_by_direct(g, entry_id, intelligence_cap)
-        cb_blurb = (
-            "*Direct predecessors in dependency reachability (calls + structural relations when enabled; capped).*"
+        cb = called_by_direct(
+            g,
+            entry_id,
+            intelligence_cap,
+            include_contains=intelligence_include_contains,
         )
-    im = impact_descendants(g, entry_id, intelligence_cap)
+        cb_blurb = (
+            "*Direct predecessors in dependency reachability (calls + structural relations when enabled; "
+            f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; capped).*"
+        )
+    im = impact_descendants(
+        g,
+        entry_id,
+        intelligence_cap,
+        include_contains=intelligence_include_contains,
+    )
     lines.append("## Called By")
     lines.append("")
     lines.append(cb_blurb)
@@ -345,7 +441,10 @@ def write_entry_markdown(
     lines.append("")
     lines.append("## Impact")
     lines.append("")
-    lines.append("*Transitive downstream (`nx.descendants` on dependency reachability; capped).*")
+    lines.append(
+        "*Transitive downstream (`nx.descendants` on dependency reachability; "
+        f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; capped).*",
+    )
     lines.append("")
     if im:
         for x in im:
@@ -360,21 +459,59 @@ def write_entry_markdown(
     lines.append("")
     if graph_include_structural:
         dep = structural_dependency_bullets(g, entry_id, intelligence_cap)
+        any_dep = bool(dep)
         if dep:
             lines.extend(dep)
             if len(dep) >= intelligence_cap:
                 lines.append(f"- *…truncated at {intelligence_cap} items.*")
-        else:
+        if entry_id in g:
+            fp = str(g.nodes[entry_id].get("file_path") or "").replace("\\", "/")
+            if fp:
+                fid = f"file:{fp}"
+                if fid in g:
+                    imps = file_import_successors(g, fid, cap=intelligence_cap)
+                    if imps:
+                        any_dep = True
+                        lines.append("")
+                        lines.append("**Imports (file scope)**")
+                        for t in imps[:intelligence_cap]:
+                            lines.append(f"- `{_md_escape(str(t))}`")
+        cvert = _class_vertex_for_method(entry_id, g)
+        if cvert:
+            inh = class_structural_successors(
+                g,
+                cvert,
+                frozenset({graph_rel.REL_INHERITS, graph_rel.REL_IMPLEMENTS}),
+                cap=intelligence_cap,
+            )
+            if inh:
+                any_dep = True
+                lines.append("")
+                lines.append("**Class inheritance / implements**")
+                for reln, tgt in inh:
+                    lines.append(f"- `{reln}` → `{_md_escape(str(tgt))}`")
+        if not any_dep:
             lines.append(
                 "*No structural edges for this symbol's file/class, or class context missing. "
-                "Use Java sources with `--graph-include-structural`.*",
+                "Use `--graph-include-structural` or `--enable-dependency-graph` (imports for Java/Python/TS when parsed).*",
             )
     else:
         lines.append(
-            "Enable **`--graph-include-structural`** (Java) to list imports and inheritance here. "
+            "Enable **`--graph-include-structural`** or **`--enable-dependency-graph`** to list imports and inheritance. "
             "Structural view is also summarized in `graph-schema.json` when `--emit-graph-schema` is used with `json`.",
         )
     lines.append("")
+
+    crb = _cross_repo_import_bullets(g, entry_id, intelligence_cap)
+    if crb:
+        lines.append("## Cross-repo imports")
+        lines.append("")
+        lines.append("*Outgoing `CROSS_REPO_IMPORT` edges from this entry's file (package-hint resolution; capped).*")
+        lines.append("")
+        lines.extend(crb)
+        if len(crb) >= intelligence_cap:
+            lines.append(f"- *…truncated at {intelligence_cap} items.*")
+        lines.append("")
 
     ref_list = references_from(g, entry_id)
     if include_references or ref_list:
@@ -430,12 +567,22 @@ def write_entry_markdown(
         lines.append("")
 
     if cluster_by_file and entry_id in g:
-        fp0 = str((g.nodes[entry_id].get("file_path") or "")).strip()
+        fp0 = str((g.nodes[entry_id].get("file_path") or "")).strip().replace("\\", "/")
         cid0 = cluster_by_file.get(fp0) if fp0 else None
         if cid0 is not None:
             lines.append("## Cluster")
             lines.append("")
-            lines.append(f"- **Community id:** {cid0} (from `cluster_mode` communities)")
+            lab0 = (
+                cluster_label_by_file.get(fp0)
+                if cluster_label_by_file and fp0
+                else None
+            )
+            if lab0:
+                lines.append(
+                    f"- **Cluster label:** `{_md_escape(str(lab0))}` (id {cid0}; rule-based, `cluster_mode` communities)",
+                )
+            else:
+                lines.append(f"- **Community id:** {cid0} (from `cluster_mode` communities)")
             lines.append("")
 
     if enable_embeddings and entry_id in g:
@@ -461,6 +608,56 @@ def write_entry_markdown(
                 else:
                     lines.append(f"- `{_md_escape(nid)}` — {_md_escape(str(lab))}")
             lines.append("")
+
+    if nl_query_href:
+        lines.append("## NL query (scan)")
+        lines.append("")
+        lines.append(f"- Full rule-based result: [`nl-query-results.json`]({_md_escape(nl_query_href)})")
+        lines.append("")
+
+    if runtime_insights:
+        hp = runtime_insights.get("hot_paths") or []
+        meta = runtime_insights.get("hot_paths_meta") or {}
+        if hp:
+            lines.append("## Hot paths (CFG + runtime)")
+            lines.append("")
+            lines.append("*Scores sum runtime trace counts along enumerated CFG paths (see `runtime-insights.json`).*")
+            lines.append("")
+            for i, row in enumerate(hp[:12], 1):
+                nodes = row.get("nodes") or []
+                sc = float(row.get("score") or 0)
+                chain = " → ".join(str(x) for x in nodes[:16])
+                lines.append(f"{i}. score **{sc:.1f}** — `{_md_escape(chain)}`")
+            if meta.get("paths_truncated"):
+                lines.append("- *CFG path enumeration truncated.*")
+            lines.append("")
+        rare = runtime_insights.get("rare_cfg_edges") or []
+        if rare:
+            lines.append("## Anomalies (rare CFG edges)")
+            lines.append("")
+            defn = str(runtime_insights.get("definition") or "").strip()
+            if defn:
+                lines.append(f"*{defn}*")
+                lines.append("")
+            for row in rare[:30]:
+                fr = row.get("frequency")
+                frs = f"{float(fr):.4f}" if isinstance(fr, int | float) else str(fr)
+                lines.append(
+                    f"- `{_md_escape(str(row.get('source')))}`→`{_md_escape(str(row.get('target')))}` — freq {frs}",
+                )
+            lines.append("")
+        outs = runtime_insights.get("semantic_outliers") or []
+        local_o = [x for x in outs if x.get("node_id") in sl.nodes]
+        if local_o:
+            lines.append("## Semantic outliers (in slice)")
+            lines.append("")
+            for x in local_o[:24]:
+                lines.append(
+                    f"- `{_md_escape(str(x.get('node_id')))}` — distance {float(x.get('distance', 0)):.3f}",
+                )
+            lines.append("")
+        lines.append("- Data: [`runtime-insights.json`](runtime-insights.json)")
+        lines.append("")
 
     if entry_id in g:
         d = g.nodes[entry_id]
@@ -534,6 +731,8 @@ def write_system_overview(
     project_hint: str | None = None,
     graph: CodeflowGraph | None = None,
     emit_graph_stats: bool = False,
+    graph_reachability_include_contains: bool = False,
+    extra_sections: list[str] | None = None,
 ) -> None:
     """Write root overview. Each row: ``(slug, type_label, start_method, link_line, one_line)``.
 
@@ -555,5 +754,12 @@ def write_system_overview(
     lines.append("")
     if emit_graph_stats and graph is not None:
         lines.extend(_graph_inventory_lines(graph))
-        lines.extend(_system_graph_insights_lines(graph))
+        lines.extend(
+            _system_graph_insights_lines(
+                graph,
+                include_contains=graph_reachability_include_contains,
+            ),
+        )
+    if extra_sections:
+        lines.extend(extra_sections)
     path.write_text("\n".join(lines), encoding="utf-8")

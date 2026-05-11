@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from md_generator.codeflow.graph.relations import REL_REFERENCES
+from md_generator.codeflow.graph.relations import REL_IMPORTS, REL_REFERENCES
 from md_generator.codeflow.models.ir import (
     CallSite,
     CallResolution,
@@ -52,6 +52,8 @@ class PythonParser:
         text = path.read_text(encoding="utf-8", errors="replace")
         tree = ast.parse(text, filename=str(path))
         fr = FileParseResult(path=path.resolve(), language=self.language)
+
+        self._emit_module_import_edges(tree, key, fr)
 
         imports: dict[str, str] = {}
         self._gather_imports(tree, imports)
@@ -130,6 +132,56 @@ class PythonParser:
                     )
                     break
         return hits
+
+    def _emit_module_import_edges(self, tree: ast.Module, key: str, fr: FileParseResult) -> None:
+        """Top-level ``ast.Import`` / ``ast.ImportFrom`` → ``file:`` → ``external::`` IMPORTS (merged when structural on)."""
+        fid = f"file:{key}"
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    mod = alias.name
+                    if not mod:
+                        continue
+                    fr.structural_edges.append(
+                        StructuralEdge(
+                            source_id=fid,
+                            target_id=f"external::{mod}",
+                            relation=REL_IMPORTS,
+                            confidence=0.88,
+                            line=getattr(node, "lineno", None),
+                        ),
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                if node.level and node.level > 0:
+                    base = node.module or ""
+                    label = "." * node.level + base if base else "." * node.level
+                    fr.structural_edges.append(
+                        StructuralEdge(
+                            source_id=fid,
+                            target_id=f"external::relative::{label}",
+                            relation=REL_IMPORTS,
+                            confidence=0.45,
+                            line=getattr(node, "lineno", None),
+                        ),
+                    )
+                    continue
+                mod = node.module or ""
+                for alias in node.names:
+                    if alias.name == "*":
+                        tgt = f"external::{mod}.*" if mod else "external::*"
+                    elif mod:
+                        tgt = f"external::{mod}.{alias.name}"
+                    else:
+                        tgt = f"external::{alias.name}"
+                    fr.structural_edges.append(
+                        StructuralEdge(
+                            source_id=fid,
+                            target_id=tgt,
+                            relation=REL_IMPORTS,
+                            confidence=0.85 if mod else 0.75,
+                            line=getattr(node, "lineno", None),
+                        ),
+                    )
 
 
 class _MethodVisitor:

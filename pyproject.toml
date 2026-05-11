@@ -45,7 +45,7 @@ image-ocr = [
   "paddleocr>=2.7.0.3",
   "easyocr>=1.7.0",
 ]
-text = []
+text = ["xmltodict>=0.13.0", "lxml>=5.0.0"]
 archive = ["Pillow>=10.0.0", "pytesseract>=0.3.10"]
 url = [
   "httpx>=0.27.0",
@@ -135,6 +135,22 @@ codeflow-semantic = [
   "scikit-learn>=1.3.0",
   "sentence-transformers>=3.0.0",
 ]
+log = [
+  "pandas>=2.0.0",
+  "python-dateutil>=2.8.0",
+  "pyyaml>=6.0.0",
+]
+log-cluster = [
+  "scikit-learn>=1.3.0",
+]
+log-semantic = [
+  "numpy>=1.24.0",
+  "scikit-learn>=1.3.0",
+  "sentence-transformers>=3.0.0",
+]
+log-pretty = [
+  "loguru>=0.7.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -161,6 +177,8 @@ dev = [
   "mdengine[openapi]",
   "mdengine[codeflow]",
   "mdengine[codeflow-treesitter]",
+  "mdengine[log]",
+  "mdengine[log-cluster]",
 ]
 all = [
   "pymupdf>=1.24.0",
@@ -229,6 +247,9 @@ md-codeflow = "md_generator.codeflow.cli.main:main"
 codeflow = "md_generator.codeflow.cli.main:main"
 md-codeflow-api = "md_generator.codeflow.api.run:main"
 md-codeflow-mcp = "md_generator.codeflow.api.mcp_server:main"
+md-log = "md_generator.log.cli.main:main"
+md-log-api = "md_generator.log.api.run:main"
+md-log-mcp = "md_generator.log.api.mcp_server:main"
 mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]
@@ -239,6 +260,7 @@ include = ["md_generator*"]
 "md_generator.db.config" = ["*.yaml"]
 "md_generator.graph.config" = ["*.yaml"]
 "md_generator.openapi.config" = ["*.yaml"]
+"md_generator.log.config" = ["*.yaml", "presets/*.yaml"]
 "md_generator.tools.assistant" = ["data/**/*"]
 
 [tool.pytest.ini_options]
@@ -261,5 +283,6 @@ testpaths = [
   "graph-to-md/tests",
   "openapi-to-md/tests",
   "codeflow-to-md/tests",
+  "log-to-md/tests",
 ]
 markers = ["integration: optional dependency or slower checks"]

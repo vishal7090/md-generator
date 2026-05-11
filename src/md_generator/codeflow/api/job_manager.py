@@ -206,6 +206,11 @@ class CodeflowJobManager:
                 lw = LoadedWorkspace(root=cfg.project_root, cleanup_dir=None)
 
                 self.update_progress(job_id, 10, "scan")
+                cm = cfg.cache_clear_mode
+                if cm and str(cm).strip().lower() in ("git", "all"):
+                    from md_generator.codeflow.core.cache_manager import apply_git_cache_clear
+
+                    apply_git_cache_clear()
                 run_scan(cfg, workspace=lw)
                 on_prog(90, "zip")
 

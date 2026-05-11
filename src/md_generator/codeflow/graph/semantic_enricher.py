@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from pathlib import Path
+
+from md_generator.codeflow.core.cache_manager import write_json_cache
 from md_generator.codeflow.graph.clustering import semantic_clusters_from_embeddings
 from md_generator.codeflow.graph.embeddings import build_embedding_text, embed_nodes_cached
 from md_generator.codeflow.graph.multigraph_utils import CodeflowGraph
@@ -51,6 +54,20 @@ def build_semantic_artifacts(
     if not any(t.strip() for t in texts):
         return None
     vectors = embed_nodes_cached(project_root, model_id, node_ids, texts, encode_fn=encode_fn)
+    try:
+        write_json_cache(
+            Path(project_root),
+            "semantic_meta",
+            model_id,
+            {
+                "model_id": model_id,
+                "backend": "custom" if encode_fn is not None else "local",
+                "embedded_count": len(node_ids),
+            },
+            ttl_seconds=0,
+        )
+    except OSError:
+        pass
     import numpy as np
 
     vectors = np.asarray(vectors, dtype=np.float32)

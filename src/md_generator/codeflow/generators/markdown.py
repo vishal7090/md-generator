@@ -21,6 +21,7 @@ def write_flow_markdown(
     list_cap: int = 80,
     intelligence_transitive_callers: bool = False,
     graph_include_structural: bool = False,
+    intelligence_include_contains: bool = False,
 ) -> None:
     lines: list[str] = []
     lines.append(f"# Entry: `{entry_id}`")
@@ -50,18 +51,35 @@ def write_flow_markdown(
     lines.append("")
 
     if intelligence_transitive_callers:
-        cb = called_by_transitive(g, entry_id, list_cap)
+        cb = called_by_transitive(
+            g,
+            entry_id,
+            list_cap,
+            include_contains=intelligence_include_contains,
+        )
         cb_blurb = (
             "Transitive upstream nodes (`nx.ancestors` on **dependency reachability**: "
-            "CALLS + IMPORTS / INHERITS / … when present; excludes CONTAINS; capped)."
+            "CALLS + IMPORTS / INHERITS / … when present; "
+            f"{'includes' if intelligence_include_contains else 'excludes'} CONTAINS; capped)."
         )
     else:
-        cb = called_by_direct(g, entry_id, list_cap)
+        cb = called_by_direct(
+            g,
+            entry_id,
+            list_cap,
+            include_contains=intelligence_include_contains,
+        )
         cb_blurb = (
             "Direct predecessors in **dependency reachability** "
-            "(calls + structural relations when ``--graph-include-structural`` is on; capped)."
+            "(calls + structural relations when ``--graph-include-structural`` is on; "
+            f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; capped)."
         )
-    im = impact_descendants(g, entry_id, list_cap)
+    im = impact_descendants(
+        g,
+        entry_id,
+        list_cap,
+        include_contains=intelligence_include_contains,
+    )
     lines.append("## Called By")
     lines.append("")
     lines.append(cb_blurb)
@@ -78,6 +96,7 @@ def write_flow_markdown(
     lines.append("")
     lines.append(
         "Transitive downstream nodes (`nx.descendants` on **dependency reachability**; "
+        f"{'CONTAINS included' if intelligence_include_contains else 'CONTAINS excluded'}; "
         "not the depth slice only; capped).",
     )
     lines.append("")
