@@ -159,6 +159,15 @@ api = [
   "pydantic-settings>=2.0.0",
 ]
 mcp = ["mcp>=1.2.0", "fastmcp>=2.3.0"]
+docs = [
+  "mkdocs-material",
+  "mkdocstrings",
+  "mkdocstrings-python",
+  "pymdown-extensions",
+  "mkdocs-mermaid2-plugin",
+  "mkdocs-git-revision-date-localized-plugin",
+  "mike",
+]
 # Optional: AI skill bundle helpers (md_generator.tools.assistant)
 skill-openai = ["openai>=1.30.0"]
 skill-rag-chroma = ["chromadb>=0.4.22"]
@@ -212,6 +221,7 @@ all = [
 Homepage = "https://github.com/vishal7090/md-generator"
 Repository = "https://github.com/vishal7090/md-generator"
 Issues = "https://github.com/vishal7090/md-generator/issues"
+Documentation = "https://vishal7090.github.io/md-generator/"
 
 [project.scripts]
 md-pdf = "md_generator.pdf.converter:main"

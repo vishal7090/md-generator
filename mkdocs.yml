@@ -1,0 +1,422 @@
+site_name: mdengine Documentation
+site_description: Enterprise documentation for the mdengine Python monorepo.
+site_url: https://vishal7090.github.io/md-generator/
+repo_url: https://github.com/vishal7090/md-generator
+repo_name: vishal7090/md-generator
+edit_uri: edit/main/docs/
+
+strict: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Introduction: getting-started/introduction.md
+      - Quick Start: getting-started/quick-start.md
+      - Prerequisites: getting-started/prerequisites.md
+      - Installation: getting-started/installation.md
+      - Local Development: getting-started/local-development.md
+      - Environment Setup: getting-started/environment-setup.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - HLD: architecture/hld.md
+      - LLD: architecture/lld.md
+      - System Design: architecture/system-design.md
+      - Module Interactions: architecture/module-interactions.md
+      - Deployment Architecture: architecture/deployment-architecture.md
+      - Sequence Diagrams: architecture/sequence-diagrams.md
+      - Data Flow: architecture/data-flow.md
+  - Modules:
+      - PDF:
+          - Overview: modules/pdf/overview.md
+          - Responsibilities: modules/pdf/responsibilities.md
+          - Installation: modules/pdf/installation.md
+          - Configuration: modules/pdf/configuration.md
+          - Workflows: modules/pdf/workflows.md
+          - Api: modules/pdf/api.md
+          - Database: modules/pdf/database.md
+          - Exceptions: modules/pdf/exceptions.md
+          - Logging: modules/pdf/logging.md
+          - Testing: modules/pdf/testing.md
+          - Deployment: modules/pdf/deployment.md
+          - Lld: modules/pdf/lld.md
+      - Word:
+          - Overview: modules/word/overview.md
+          - Responsibilities: modules/word/responsibilities.md
+          - Installation: modules/word/installation.md
+          - Configuration: modules/word/configuration.md
+          - Workflows: modules/word/workflows.md
+          - Api: modules/word/api.md
+          - Database: modules/word/database.md
+          - Exceptions: modules/word/exceptions.md
+          - Logging: modules/word/logging.md
+          - Testing: modules/word/testing.md
+          - Deployment: modules/word/deployment.md
+          - Lld: modules/word/lld.md
+      - PowerPoint:
+          - Overview: modules/ppt/overview.md
+          - Responsibilities: modules/ppt/responsibilities.md
+          - Installation: modules/ppt/installation.md
+          - Configuration: modules/ppt/configuration.md
+          - Workflows: modules/ppt/workflows.md
+          - Api: modules/ppt/api.md
+          - Database: modules/ppt/database.md
+          - Exceptions: modules/ppt/exceptions.md
+          - Logging: modules/ppt/logging.md
+          - Testing: modules/ppt/testing.md
+          - Deployment: modules/ppt/deployment.md
+          - Lld: modules/ppt/lld.md
+      - Excel and CSV:
+          - Overview: modules/xlsx/overview.md
+          - Responsibilities: modules/xlsx/responsibilities.md
+          - Installation: modules/xlsx/installation.md
+          - Configuration: modules/xlsx/configuration.md
+          - Workflows: modules/xlsx/workflows.md
+          - Api: modules/xlsx/api.md
+          - Database: modules/xlsx/database.md
+          - Exceptions: modules/xlsx/exceptions.md
+          - Logging: modules/xlsx/logging.md
+          - Testing: modules/xlsx/testing.md
+          - Deployment: modules/xlsx/deployment.md
+          - Lld: modules/xlsx/lld.md
+      - Image OCR:
+          - Overview: modules/image/overview.md
+          - Responsibilities: modules/image/responsibilities.md
+          - Installation: modules/image/installation.md
+          - Configuration: modules/image/configuration.md
+          - Workflows: modules/image/workflows.md
+          - Api: modules/image/api.md
+          - Database: modules/image/database.md
+          - Exceptions: modules/image/exceptions.md
+          - Logging: modules/image/logging.md
+          - Testing: modules/image/testing.md
+          - Deployment: modules/image/deployment.md
+          - Lld: modules/image/lld.md
+      - Text JSON XML:
+          - Overview: modules/text/overview.md
+          - Responsibilities: modules/text/responsibilities.md
+          - Installation: modules/text/installation.md
+          - Configuration: modules/text/configuration.md
+          - Workflows: modules/text/workflows.md
+          - Api: modules/text/api.md
+          - Database: modules/text/database.md
+          - Exceptions: modules/text/exceptions.md
+          - Logging: modules/text/logging.md
+          - Testing: modules/text/testing.md
+          - Deployment: modules/text/deployment.md
+          - Lld: modules/text/lld.md
+      - ZIP Archive:
+          - Overview: modules/archive/overview.md
+          - Responsibilities: modules/archive/responsibilities.md
+          - Installation: modules/archive/installation.md
+          - Configuration: modules/archive/configuration.md
+          - Workflows: modules/archive/workflows.md
+          - Api: modules/archive/api.md
+          - Database: modules/archive/database.md
+          - Exceptions: modules/archive/exceptions.md
+          - Logging: modules/archive/logging.md
+          - Testing: modules/archive/testing.md
+          - Deployment: modules/archive/deployment.md
+          - Lld: modules/archive/lld.md
+      - URL and Web:
+          - Overview: modules/url/overview.md
+          - Responsibilities: modules/url/responsibilities.md
+          - Installation: modules/url/installation.md
+          - Configuration: modules/url/configuration.md
+          - Workflows: modules/url/workflows.md
+          - Api: modules/url/api.md
+          - Database: modules/url/database.md
+          - Exceptions: modules/url/exceptions.md
+          - Logging: modules/url/logging.md
+          - Testing: modules/url/testing.md
+          - Deployment: modules/url/deployment.md
+          - Lld: modules/url/lld.md
+      - Audio:
+          - Overview: modules/media-audio/overview.md
+          - Responsibilities: modules/media-audio/responsibilities.md
+          - Installation: modules/media-audio/installation.md
+          - Configuration: modules/media-audio/configuration.md
+          - Workflows: modules/media-audio/workflows.md
+          - Api: modules/media-audio/api.md
+          - Database: modules/media-audio/database.md
+          - Exceptions: modules/media-audio/exceptions.md
+          - Logging: modules/media-audio/logging.md
+          - Testing: modules/media-audio/testing.md
+          - Deployment: modules/media-audio/deployment.md
+          - Lld: modules/media-audio/lld.md
+      - Video:
+          - Overview: modules/media-video/overview.md
+          - Responsibilities: modules/media-video/responsibilities.md
+          - Installation: modules/media-video/installation.md
+          - Configuration: modules/media-video/configuration.md
+          - Workflows: modules/media-video/workflows.md
+          - Api: modules/media-video/api.md
+          - Database: modules/media-video/database.md
+          - Exceptions: modules/media-video/exceptions.md
+          - Logging: modules/media-video/logging.md
+          - Testing: modules/media-video/testing.md
+          - Deployment: modules/media-video/deployment.md
+          - Lld: modules/media-video/lld.md
+      - YouTube:
+          - Overview: modules/media-youtube/overview.md
+          - Responsibilities: modules/media-youtube/responsibilities.md
+          - Installation: modules/media-youtube/installation.md
+          - Configuration: modules/media-youtube/configuration.md
+          - Workflows: modules/media-youtube/workflows.md
+          - Api: modules/media-youtube/api.md
+          - Database: modules/media-youtube/database.md
+          - Exceptions: modules/media-youtube/exceptions.md
+          - Logging: modules/media-youtube/logging.md
+          - Testing: modules/media-youtube/testing.md
+          - Deployment: modules/media-youtube/deployment.md
+          - Lld: modules/media-youtube/lld.md
+      - Playwright Web Capture:
+          - Overview: modules/playwright/overview.md
+          - Responsibilities: modules/playwright/responsibilities.md
+          - Installation: modules/playwright/installation.md
+          - Configuration: modules/playwright/configuration.md
+          - Workflows: modules/playwright/workflows.md
+          - Api: modules/playwright/api.md
+          - Database: modules/playwright/database.md
+          - Exceptions: modules/playwright/exceptions.md
+          - Logging: modules/playwright/logging.md
+          - Testing: modules/playwright/testing.md
+          - Deployment: modules/playwright/deployment.md
+          - Lld: modules/playwright/lld.md
+      - Database Metadata:
+          - Overview: modules/db/overview.md
+          - Responsibilities: modules/db/responsibilities.md
+          - Installation: modules/db/installation.md
+          - Configuration: modules/db/configuration.md
+          - Workflows: modules/db/workflows.md
+          - Api: modules/db/api.md
+          - Database: modules/db/database.md
+          - Exceptions: modules/db/exceptions.md
+          - Logging: modules/db/logging.md
+          - Testing: modules/db/testing.md
+          - Deployment: modules/db/deployment.md
+          - Lld: modules/db/lld.md
+      - Graph Metadata:
+          - Overview: modules/graph/overview.md
+          - Responsibilities: modules/graph/responsibilities.md
+          - Installation: modules/graph/installation.md
+          - Configuration: modules/graph/configuration.md
+          - Workflows: modules/graph/workflows.md
+          - Api: modules/graph/api.md
+          - Database: modules/graph/database.md
+          - Exceptions: modules/graph/exceptions.md
+          - Logging: modules/graph/logging.md
+          - Testing: modules/graph/testing.md
+          - Deployment: modules/graph/deployment.md
+          - Lld: modules/graph/lld.md
+      - OpenAPI:
+          - Overview: modules/openapi/overview.md
+          - Responsibilities: modules/openapi/responsibilities.md
+          - Installation: modules/openapi/installation.md
+          - Configuration: modules/openapi/configuration.md
+          - Workflows: modules/openapi/workflows.md
+          - Api: modules/openapi/api.md
+          - Database: modules/openapi/database.md
+          - Exceptions: modules/openapi/exceptions.md
+          - Logging: modules/openapi/logging.md
+          - Testing: modules/openapi/testing.md
+          - Deployment: modules/openapi/deployment.md
+          - Lld: modules/openapi/lld.md
+      - Codeflow:
+          - Overview: modules/codeflow/overview.md
+          - Responsibilities: modules/codeflow/responsibilities.md
+          - Installation: modules/codeflow/installation.md
+          - Configuration: modules/codeflow/configuration.md
+          - Workflows: modules/codeflow/workflows.md
+          - Api: modules/codeflow/api.md
+          - Database: modules/codeflow/database.md
+          - Exceptions: modules/codeflow/exceptions.md
+          - Logging: modules/codeflow/logging.md
+          - Testing: modules/codeflow/testing.md
+          - Deployment: modules/codeflow/deployment.md
+          - Lld: modules/codeflow/lld.md
+      - Log Analysis:
+          - Overview: modules/log/overview.md
+          - Responsibilities: modules/log/responsibilities.md
+          - Installation: modules/log/installation.md
+          - Configuration: modules/log/configuration.md
+          - Workflows: modules/log/workflows.md
+          - Api: modules/log/api.md
+          - Database: modules/log/database.md
+          - Exceptions: modules/log/exceptions.md
+          - Logging: modules/log/logging.md
+          - Testing: modules/log/testing.md
+          - Deployment: modules/log/deployment.md
+          - Lld: modules/log/lld.md
+      - AI Assistant Tools:
+          - Overview: modules/tools-assistant/overview.md
+          - Responsibilities: modules/tools-assistant/responsibilities.md
+          - Installation: modules/tools-assistant/installation.md
+          - Configuration: modules/tools-assistant/configuration.md
+          - Workflows: modules/tools-assistant/workflows.md
+          - Api: modules/tools-assistant/api.md
+          - Database: modules/tools-assistant/database.md
+          - Exceptions: modules/tools-assistant/exceptions.md
+          - Logging: modules/tools-assistant/logging.md
+          - Testing: modules/tools-assistant/testing.md
+          - Deployment: modules/tools-assistant/deployment.md
+          - Lld: modules/tools-assistant/lld.md
+      - Skill Builder:
+          - Overview: modules/tools-skill-builder/overview.md
+          - Responsibilities: modules/tools-skill-builder/responsibilities.md
+          - Installation: modules/tools-skill-builder/installation.md
+          - Configuration: modules/tools-skill-builder/configuration.md
+          - Workflows: modules/tools-skill-builder/workflows.md
+          - Api: modules/tools-skill-builder/api.md
+          - Database: modules/tools-skill-builder/database.md
+          - Exceptions: modules/tools-skill-builder/exceptions.md
+          - Logging: modules/tools-skill-builder/logging.md
+          - Testing: modules/tools-skill-builder/testing.md
+          - Deployment: modules/tools-skill-builder/deployment.md
+          - Lld: modules/tools-skill-builder/lld.md
+  - API:
+      - Overview: api/overview.md
+      - Authentication: api/authentication.md
+      - Endpoints: api/endpoints.md
+      - Request Response: api/request-response.md
+      - Error Handling: api/error-handling.md
+      - Examples: api/examples.md
+  - Database:
+      - Schema: database/schema.md
+      - Migrations: database/migrations.md
+      - Indexing: database/indexing.md
+      - Optimization: database/optimization.md
+  - Integrations:
+      - Kafka: integrations/kafka.md
+      - Redis: integrations/redis.md
+      - MongoDB: integrations/mongodb.md
+      - Postgres: integrations/postgres.md
+      - Elasticsearch: integrations/elasticsearch.md
+      - External APIs: integrations/external-apis.md
+      - Cloud Services: integrations/cloud-services.md
+  - Deployment:
+      - Docker: deployment/docker.md
+      - Kubernetes: deployment/kubernetes.md
+      - Helm: deployment/helm.md
+      - CI/CD: deployment/ci-cd.md
+      - Scaling: deployment/scaling.md
+      - Production Checklist: deployment/production-checklist.md
+  - Development:
+      - Coding Standards: development/coding-standards.md
+      - Project Structure: development/project-structure.md
+      - Debugging: development/debugging.md
+      - Testing Strategy: development/testing-strategy.md
+      - Linting: development/linting.md
+      - Release Process: development/release-process.md
+  - AI/ML:
+      - Models: ai-ml/models.md
+      - Pipelines: ai-ml/pipelines.md
+      - Datasets: ai-ml/datasets.md
+      - Embeddings: ai-ml/embeddings.md
+      - Vector Database: ai-ml/vector-database.md
+      - Inference Flow: ai-ml/inference-flow.md
+  - Operations:
+      - Monitoring: operations/monitoring.md
+      - Observability: operations/observability.md
+      - Alerting: operations/alerting.md
+      - Logging: operations/logging.md
+      - Troubleshooting: operations/troubleshooting.md
+  - Non Technical:
+      - Business Overview: non-technical/business-overview.md
+      - User Guide: non-technical/user-guide.md
+      - FAQ: non-technical/faq.md
+      - Glossary: non-technical/glossary.md
+      - Onboarding: non-technical/onboarding.md
+  - Reference:
+      - Environment Variables: reference/environment-variables.md
+      - Commands: reference/commands.md
+      - Dependencies: reference/dependencies.md
+      - Configuration Reference: reference/configuration-reference.md
+      - Python API:
+          - engine-cli: reference/api/engine-cli.md
+          - pdf: reference/api/pdf.md
+          - word: reference/api/word.md
+          - ppt: reference/api/ppt.md
+          - xlsx: reference/api/xlsx.md
+          - image: reference/api/image.md
+          - text: reference/api/text.md
+          - archive: reference/api/archive.md
+          - url: reference/api/url.md
+          - media-audio: reference/api/media-audio.md
+          - media-video: reference/api/media-video.md
+          - media-youtube: reference/api/media-youtube.md
+          - playwright: reference/api/playwright.md
+          - db: reference/api/db.md
+          - graph: reference/api/graph.md
+          - openapi: reference/api/openapi.md
+          - codeflow: reference/api/codeflow.md
+          - log: reference/api/log.md
+          - tools-assistant: reference/api/tools-assistant.md
+          - tools-skill-builder: reference/api/tools-skill-builder.md
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mermaid2
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_root_full_path: false
+            merge_init_into_class: true
+            separate_signature: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra:
+  version:
+    provider: mike
