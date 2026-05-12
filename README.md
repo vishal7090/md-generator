@@ -7,7 +7,7 @@ Single Python distribution for converting **PDF**, **Word (.docx)**, **PowerPoin
 - **Python:** 3.10+
 - **License:** [MIT](LICENSE)
 
-**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [Audio and video](#audio-and-video-to-markdown) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [AI assistant CLI](#ai-assistant-cli) · [Development](#development) · [Code of Conduct](CODE_OF_CONDUCT.md)
+**Quick links:** [On a new computer](#on-a-new-computer) · [Command-line execution](#command-line-execution) · [Python library](#python-library) · [Audio and video](#audio-and-video-to-markdown) · [HTTP API](#http-api-fastapi) · [MCP](#mcp-model-context-protocol) · [AI assistant CLI](#ai-assistant-cli) · [Development](#development) · [Published documentation](https://vishal7090.github.io/md-generator/) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ---
 
@@ -76,9 +76,23 @@ pip install "mdengine[all]"
 | `url-full` | `url` plus PDF/Word/PPTX/XLSX/archive stack for **post-converting** downloaded linked files to Markdown |
 | `audio` | **Audio → Markdown** via Whisper (`openai-whisper`); ships `imageio-ffmpeg` for a bundled **ffmpeg** when none is on `PATH` |
 | `video` | **Video → Markdown** (ffmpeg extracts mono 16 kHz WAV, then same Whisper stack as `audio`) |
+| `youtube` | **YouTube → Markdown** (captions + page metadata; `youtube-transcript-api`, httpx, BeautifulSoup, lxml) |
+| `playwright` | **Playwright-rendered SPA → Markdown** (`playwright` + same HTML stack as `url`; run `playwright install chromium` after install) |
+| `db` | **Database metadata → Markdown** (SQLAlchemy, drivers, `mermaid-py` for ERD helpers) |
+| `openapi` | **OpenAPI / Swagger → Markdown** (`prance`, `openapi-spec-validator`, PyYAML) |
+| `codeflow` | **Static codeflow / call graphs → Markdown** (`networkx`, `javalang`; core scanners) |
+| `codeflow-worker` | Optional **Celery + Redis** workers for the codeflow API async path |
+| `codeflow-treesitter` | **Tree-sitter** parsers (JS/TS/TSX, C++) for richer codeflow slices |
+| `codeflow-clang` | **libclang** bindings for C/C++ parsing when used by the codeflow pipeline |
+| `codeflow-semantic` | **Semantic clustering** (SentenceTransformers, scikit-learn, numpy; large install) |
+| `log` | **Log files → Markdown** (`pandas`, PyYAML, date parsing) |
+| `log-cluster` | Log pipeline **clustering** (scikit-learn) |
+| `log-semantic` | Log pipeline **semantic** helpers (SentenceTransformers + scikit-learn; large) |
+| `log-pretty` | Optional **loguru** for pretty console diagnostics during log conversion |
 | `api` | FastAPI, uvicorn, httpx, pydantic-settings |
 | `mcp` | MCP servers (`mcp`, `fastmcp` where used) |
 | `graph` | **Graph → Markdown** (Neo4j Bolt + NetworkX GraphML/GML): `networkx`, `neo4j`, `pyyaml` |
+| `docs` | **MkDocs** site tooling (Material, mkdocstrings, Mermaid plugin, mike) for maintainers publishing reference docs |
 | `dev` | pytest + API/MCP test helpers |
 | `all` | Large superset of dependencies (use only if you need everything) |
 | `skill-openai` | Optional helpers for OpenAI-style calls with assembled skill context (`md_generator.tools.assistant`) |
@@ -139,7 +153,17 @@ If the shell reports “command not found”, ensure the Python **Scripts** dire
 | `md-openapi` | `md_generator.openapi.cli.main:main` | `pip install "mdengine[openapi]"` then `md-openapi generate --file openapi.yaml --output ./docs` (or `mdengine openapi-to-md generate …`) |
 | `md-openapi-api` | `md_generator.openapi.api.run:main` | FastAPI on port **8015** (`OPENAPI_TO_MD_PORT`): `POST /openapi-to-md/generate` (OpenAPI upload → ZIP), `/health`, MCP at **`/mcp`** |
 | `md-openapi-mcp` | `md_generator.openapi.api.mcp_server:main` | Standalone MCP: `api_validate_openapi_yaml`, `api_generate_readme_markdown`, `api_run_sync_zip_base64` |
-| `mdengine` | `md_generator.engine_cli:main` | `mdengine ai assist …`, `mdengine ai export …`, `mdengine skill build …`, `mdengine db-to-md …`, `mdengine graph-to-md …`, `mdengine openapi-to-md generate …` |
+| `md-playwright` | `md_generator.playwright.cli:main` | `pip install "mdengine[playwright]"` then `md-playwright https://spa.example/app ./spa-out` (after `playwright install chromium`) |
+| `md-playwright-api` | `md_generator.playwright.api.run:main` | FastAPI + MCP on port **8014** (`PLAYWRIGHT_TO_MD_API_PORT` / settings); see [HTTP API](#http-api-fastapi) |
+| `md-playwright-mcp` | `md_generator.playwright.api.mcp_server:main` | Standalone MCP for Playwright capture tools |
+| `md-codeflow` | `md_generator.codeflow.cli.main:main` | Same as `codeflow` — `md-codeflow scan …` (alias of packaged `codeflow` script) |
+| `codeflow` | `md_generator.codeflow.cli.main:main` | `pip install "mdengine[codeflow]"` then `codeflow scan path/to/src --output ./out --lang java` |
+| `md-codeflow-api` | `md_generator.codeflow.api.run:main` | FastAPI on port **8016** (`CODEFLOW_TO_MD_PORT`); upload/workspace job flow + MCP at **`/mcp`** when MCP extras resolve |
+| `md-codeflow-mcp` | `md_generator.codeflow.api.mcp_server:main` | Standalone **stdio** MCP for codeflow tools |
+| `md-log` | `md_generator.log.cli.main:main` | `pip install "mdengine[log]"` then `md-log --config log.yaml` (or `mdengine log-to-md …`) |
+| `md-log-api` | `md_generator.log.api.run:main` | FastAPI on port **8012** (`LOG_TO_MD_PORT`); set a different port if **`md-graph-api`** or **`md-video-api`** already uses **8012** |
+| `md-log-mcp` | `md_generator.log.api.mcp_server:main` | Standalone MCP (`stdio` \| `sse` \| `streamable-http`) |
+| `mdengine` | `md_generator.engine_cli:main` | `mdengine ai assist …`, `mdengine ai export …`, `mdengine skill build …`, `mdengine db-to-md …`, `mdengine log-to-md …`, `mdengine graph-to-md …`, `mdengine openapi-to-md generate …`, `mdengine codeflow-to-md scan …` |
 
 **openapi-to-md (`md-openapi`):** OpenAPI **3.x** is parsed directly; **Swagger 2.0** (`swagger: "2.0"`) documents are **converted in-process** to OpenAPI 3.0.3 (deterministic, in-repo converter) before `$ref` resolution. Edge-heavy specs (unusual OAuth2 flows, vendor extensions) may still need fixes after conversion.
 
@@ -172,6 +196,10 @@ md-url https://example.com/page ./page-bundle --artifact-layout
 md-audio ./voice.mp3 ./voice.md --model tiny
 md-video ./screen.mp4 ./screen.md --model base
 pip install "mdengine[graph]" && md-graph --source neo4j --uri neo4j://localhost:7687 --user neo4j --password secret --database neo4j --output ./graph-out --viz
+pip install "mdengine[playwright]" && playwright install chromium && md-playwright https://example.com/app ./spa-out
+pip install "mdengine[openapi]" && md-openapi generate --file openapi.yaml --output ./openapi-md
+pip install "mdengine[log]" && md-log --config log.yaml
+md-codeflow scan ./src --output ./cf-out --lang python
 ```
 
 **Windows PowerShell** (same commands; use backslashes for paths if you prefer)
@@ -184,6 +212,9 @@ md-audio .\voice.mp3 .\voice.md --model tiny
 md-video .\screen.mp4 .\screen.md --model base
 pip install "mdengine[graph]"
 md-graph --source neo4j --uri neo4j://localhost:7687 --user neo4j --password secret --database neo4j --output .\graph-out --viz
+pip install "mdengine[playwright]"
+playwright install chromium
+md-playwright https://example.com/app .\spa-out
 ```
 
 **Windows CMD**
@@ -351,6 +382,113 @@ convert_zip(
 
 `repo_root` on `ConvertOptions` is **deprecated and ignored**; converters are loaded in-process from `md_generator`.
 
+### URL (HTML)
+
+```python
+from pathlib import Path
+
+import httpx
+from md_generator.url.convert_impl import run_single
+from md_generator.url.options import ConvertOptions
+
+with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+    run_single(
+        "https://example.com/",
+        Path("web-out"),
+        ConvertOptions(artifact_layout=True, verbose=False),
+        client,
+    )
+```
+
+See [url-to-md/README.md](url-to-md/README.md) for crawl modes, post-convert assets, and API bodies.
+
+### Playwright (SPA)
+
+```python
+import asyncio
+from pathlib import Path
+
+from md_generator.playwright.options import PlaywrightOptions
+from md_generator.playwright.pipeline import convert_url_to_md
+
+async def main() -> None:
+    await convert_url_to_md(
+        "https://example.com/app",
+        Path("spa-out"),
+        PlaywrightOptions(),
+    )
+
+asyncio.run(main())
+```
+
+Install browsers once: `playwright install chromium`.
+
+### Database metadata (db-to-md)
+
+```python
+from pathlib import Path
+
+from md_generator.db.core.extractor import extract_to_markdown
+from md_generator.db.core.run_config import load_run_config
+
+cfg = load_run_config(Path("db-export.yaml"))
+extract_to_markdown(cfg)
+```
+
+YAML shape and ERD options are covered above under **db-to-md** CLI notes.
+
+### Graph (Neo4j / NetworkX)
+
+```python
+from pathlib import Path
+
+from md_generator.graph.core.extractor import extract_to_markdown
+from md_generator.graph.core.run_config import load_graph_run_config
+
+cfg = load_graph_run_config(Path("graph-export.yaml"))
+extract_to_markdown(cfg)
+```
+
+### OpenAPI → Markdown
+
+```python
+from pathlib import Path
+
+from md_generator.openapi.core.extractor import extract_to_markdown
+from md_generator.openapi.core.run_config import ApiRunConfig
+
+cfg = ApiRunConfig(file=Path("openapi.yaml"), output_path=Path("api-md"))
+extract_to_markdown(cfg)
+```
+
+Use `load_api_run_config(Path("openapi-md.yaml"))` when you prefer a single YAML file for input/output/format defaults.
+
+### Log files (log-to-md)
+
+```python
+from pathlib import Path
+
+from md_generator.log.core.extractor import extract_to_markdown
+from md_generator.log.core.run_config import load_run_config as load_log_run_config
+
+cfg = load_log_run_config(Path("log-export.yaml"))
+extract_to_markdown(cfg)
+```
+
+### Codeflow (static call graphs)
+
+```python
+from pathlib import Path
+
+from md_generator.codeflow.core.extractor import run_scan
+from md_generator.codeflow.core.run_config import ScanConfig
+
+cfg = ScanConfig(project_root=Path("my-service/src"), output_path=Path("codeflow-out"), languages="java")
+run_scan(cfg)
+```
+
+More flags and language notes: [Development](#development) (section **Codeflow**) and [`codeflow-to-md/docs/graph-and-outputs.md`](codeflow-to-md/docs/graph-and-outputs.md).
+
 ---
 
 ## Audio and video to Markdown
@@ -467,7 +605,7 @@ Equivalent modules: `python -m md_generator.media.audio.api.mcp_server`, `python
 
 ### Thin shims (repo clone)
 
-[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`. [`db-to-md/converter.py`](db-to-md/converter.py) delegates to `md-db`; tests live under `db-to-md/tests/`. **graph-to-md** uses `md-graph` / `mdengine graph-to-md` directly (no thin `converter.py` shim); tests live under [`graph-to-md/tests/`](graph-to-md/tests/). [`openapi-to-md/converter.py`](openapi-to-md/converter.py) delegates to `md-openapi`; tests live under [`openapi-to-md/tests/`](openapi-to-md/tests/); example OpenAPI and output notes: [`openapi-to-md/examples/`](openapi-to-md/examples/).
+[`audio-to-md/converter.py`](audio-to-md/converter.py), [`video-to-md/converter.py`](video-to-md/converter.py), and [`youtube-to-md/converter.py`](youtube-to-md/converter.py) delegate to the same `main` as `md-audio` / `md-video` / `md-youtube`. Tests and `pytest.ini` live under `audio-to-md/tests/`, `video-to-md/tests/`, and `youtube-to-md/tests/`. [`db-to-md/converter.py`](db-to-md/converter.py) delegates to `md-db`; tests live under `db-to-md/tests/`. **graph-to-md** uses `md-graph` / `mdengine graph-to-md` directly (no thin `converter.py` shim); tests live under [`graph-to-md/tests/`](graph-to-md/tests/). [`openapi-to-md/converter.py`](openapi-to-md/converter.py) delegates to `md-openapi`; tests live under [`openapi-to-md/tests/`](openapi-to-md/tests/); example OpenAPI and output notes: [`openapi-to-md/examples/`](openapi-to-md/examples/). [`log-to-md/converter.py`](log-to-md/converter.py) delegates to `md-log`; tests under [`log-to-md/tests/`](log-to-md/tests/). [`codeflow-to-md/converter.py`](codeflow-to-md/converter.py) invokes the same CLI entrypoint as `md-codeflow` / `codeflow`; tests under [`codeflow-to-md/tests/`](codeflow-to-md/tests/). [`url-to-md/converter.py`](url-to-md/converter.py) matches `md-url`; tests under [`url-to-md/tests/`](url-to-md/tests/). [`playwright-to-md/tests/`](playwright-to-md/tests/) cover the Playwright pipeline (no root `converter.py` shim required).
 
 ---
 
@@ -503,23 +641,28 @@ Install `mdengine[api]` plus the format extra(s), then run the **`app`** object 
 | Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (use **`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
 | Video (Whisper) | `md_generator.media.video.api.main:create_app` (use **`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
 | YouTube | `md_generator.media.youtube.api.main:create_app` (use **`--factory`**) or `…main:app` | `youtube`, `api`, `mcp` |
+| Codeflow (workspace scans) | `md_generator.codeflow.api.main:app` | `codeflow`, `api`, `mcp` |
+| Log files → Markdown | `md_generator.log.api.main:app` | `log`, `api`, `mcp` |
 
-Examples:
+Examples (ports are **illustrative** so several services can run together; each `md-*-api` / `run` module has its own **default** — set `*_PORT` / `*_API_PORT` env vars to match your layout):
 
 ```bash
 uvicorn md_generator.pdf.api.main:app --host 127.0.0.1 --port 8001
 uvicorn md_generator.word.api.main:app --host 127.0.0.1 --port 8002
-uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8010
-uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8011
+uvicorn md_generator.archive.api.main:app --host 127.0.0.1 --port 8008
+uvicorn md_generator.url.api.main:app --host 127.0.0.1 --port 8017
+uvicorn md_generator.db.api.main:app --host 127.0.0.1 --port 8010
 uvicorn md_generator.playwright.api.main:app --host 127.0.0.1 --port 8014
-uvicorn md_generator.graph.api.main:app --host 127.0.0.1 --port 8012
+uvicorn md_generator.graph.api.main:app --host 127.0.0.1 --port 8020
 uvicorn md_generator.openapi.api.main:app --host 127.0.0.1 --port 8015
+uvicorn md_generator.codeflow.api.main:app --host 127.0.0.1 --port 8016
+uvicorn md_generator.log.api.main:app --host 127.0.0.1 --port 8018
 uvicorn md_generator.media.audio.api.main:create_app --factory --host 127.0.0.1 --port 8011
 uvicorn md_generator.media.video.api.main:create_app --factory --host 127.0.0.1 --port 8012
 uvicorn md_generator.media.youtube.api.main:create_app --factory --host 127.0.0.1 --port 8013
 ```
 
-**Port note:** **`md-graph-api`** and **`md-video-api`** both default to **8012**; set **`GRAPH_TO_MD_PORT`** or **`MD_VIDEO_API_PORT`** when you need both on one machine. **`md-openapi-api`** defaults to **8015** (`OPENAPI_TO_MD_PORT`) so it does not collide with **`md-youtube-api`** (**8013**) or **`md-playwright-api`** (**8014**).
+**Port note:** **`md-graph-api`**, **`md-video-api`**, and **`md-log-api`** all default to **8012** in their respective `run.py` modules. Run only one on that port, or set **`GRAPH_TO_MD_PORT`**, **`MD_VIDEO_API_PORT`**, and **`LOG_TO_MD_PORT`** so each process listens on a unique port. **`md-db-api`** defaults to **8010** (not shown colliding with the archive example above, which uses **8008** on purpose). **`md-openapi-api`** defaults to **8015** (`OPENAPI_TO_MD_PORT`). **`md-youtube-api`** defaults to **8013**; **`md-playwright-api`** / **`PLAYWRIGHT_TO_MD_API_PORT`** default to **8014**. **`md-codeflow-api`** defaults to **8016** (`CODEFLOW_TO_MD_PORT`).
 
 ### MCP over HTTP on the same server
 
@@ -542,6 +685,8 @@ Prefixes differ per service (often read from a `.env` file next to the process):
 | Database metadata | `DB_TO_MD_` | `DB_TO_MD_JOB_SQLITE_PATH`, `DB_TO_MD_JOB_WORKSPACE_ROOT`, `DB_TO_MD_CORS_ORIGINS`, `DB_TO_MD_MAX_SYNC_ZIP_MB`, `DB_TO_MD_HOST`, `DB_TO_MD_PORT` (default **8010**) |
 | Graph metadata | `GRAPH_TO_MD_` | `GRAPH_TO_MD_JOB_SQLITE_PATH`, `GRAPH_TO_MD_JOB_WORKSPACE_ROOT`, `GRAPH_TO_MD_CORS_ORIGINS`, `GRAPH_TO_MD_MAX_SYNC_ZIP_MB`, `GRAPH_TO_MD_HOST`, `GRAPH_TO_MD_PORT` (default **8012**) |
 | OpenAPI → Markdown | `OPENAPI_TO_MD_` | `OPENAPI_TO_MD_CORS_ORIGINS`, `OPENAPI_TO_MD_MAX_SYNC_ZIP_MB`, `OPENAPI_TO_MD_HOST`, `OPENAPI_TO_MD_PORT` (default **8015**) |
+| Codeflow API | `CODEFLOW_TO_MD_` / `CODEFLOW_` | `CODEFLOW_TO_MD_HOST`, `CODEFLOW_TO_MD_PORT` (default **8016**); in-app limits: `CODEFLOW_MAX_UPLOAD_ZIP_MB`, `CODEFLOW_MAX_SYNC_ZIP_MB`, `CODEFLOW_JOB_WORKSPACE_ROOT`, `CODEFLOW_SQLITE_PATH`, CORS via `CODEFLOW_CORS` |
+| Log API | `LOG_TO_MD_` | `LOG_TO_MD_HOST`, `LOG_TO_MD_PORT` (default **8012** — change if **graph** or **video** API uses that port), `LOG_TO_MD_CORS_ORIGINS`, `LOG_TO_MD_MAX_SYNC_ZIP_MB`, `LOG_TO_MD_MAX_LOG_UPLOAD_MB`, workspace / SQLite paths |
 | Audio API | `MD_AUDIO_` | `MD_AUDIO_MAX_UPLOAD_MB`, `MD_AUDIO_MAX_SYNC_UPLOAD_MB`, `MD_AUDIO_JOB_TTL_SECONDS`, `MD_AUDIO_TEMP_DIR`, `MD_AUDIO_CORS_ORIGINS`, `MD_AUDIO_API_HOST`, `MD_AUDIO_API_PORT` |
 | Video API | `MD_VIDEO_` | Same pattern as audio with `MD_VIDEO_*` (defaults: larger upload/sync caps, port **8012**) |
 | YouTube API | `MD_YOUTUBE_` | `MD_YOUTUBE_JOB_TTL_SECONDS`, `MD_YOUTUBE_TEMP_DIR`, `MD_YOUTUBE_CORS_ORIGINS`, `MD_YOUTUBE_API_HOST`, `MD_YOUTUBE_API_PORT` (default **8013**); optional `MD_YOUTUBE_YTDLP` path for audio fallback |
@@ -568,13 +713,15 @@ Two usage patterns:
 | PPTX | `python -m md_generator.ppt.api.mcp_server` (see module docstring for flags) |
 | Image | `python -m md_generator.image.api.mcp_server` (see module for CLI) |
 | URL / HTML | `python -m md_generator.url.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
-| Playwright / SPA | `md-playwright-mcp` or `python -m md_generator.playwright.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
+| Playwright / SPA | `md-playwright`, `md-playwright-api`, `md-playwright-mcp`, or `python -m md_generator.playwright.api.mcp_server` / `--transport sse` / `--transport streamable-http` |
 | Audio | `md-audio-mcp` or `python -m md_generator.media.audio.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 | Video | `md-video-mcp` or `python -m md_generator.media.video.api.mcp_server` — same transports |
 | YouTube | `md-youtube-mcp` or `python -m md_generator.media.youtube.api.mcp_server` — same transports |
 | Database metadata | `md-db-mcp` or `python -m md_generator.db.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 | Graph (Neo4j / NetworkX) | `md-graph-mcp` or `python -m md_generator.graph.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 | OpenAPI → Markdown | `md-openapi-mcp` or `python -m md_generator.openapi.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
+| Codeflow | `md-codeflow-mcp` or `python -m md_generator.codeflow.api.mcp_server` — **stdio** MCP (see module for details) |
+| Log files | `md-log-mcp` or `python -m md_generator.log.api.mcp_server` — `--transport stdio` (default), `sse`, `streamable-http` |
 
 **Word** and **XLSX** also ship a small runner script in the repo:
 
@@ -703,7 +850,9 @@ pip install -e ".[dev,all]"   # or a smaller subset of extras
 python -m pytest
 ```
 
-Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), **`graph-to-md/tests/`**, **`openapi-to-md/tests/`**, and **[`tool-assistant/tests/`](tool-assistant/tests/)** for the skill SDK; `pyproject.toml` sets `pythonpath = ["src"]` so **`md_generator`** (including **`md_generator.tools.assistant`**) resolves without a manual `PYTHONPATH` when you use `pytest` from the config.
+Tests live under each legacy folder’s `tests/` directory (e.g. `pdf-to-md/tests/`), plus **`url-to-md/tests/`**, **`playwright-to-md/tests/`**, **`youtube-to-md/tests/`**, **`graph-to-md/tests/`**, **`openapi-to-md/tests/`**, **`codeflow-to-md/tests/`**, **`log-to-md/tests/`**, and **[`tool-assistant/tests/`](tool-assistant/tests/)** for the skill SDK; `pyproject.toml` sets `pythonpath = ["src"]` so **`md_generator`** (including **`md_generator.tools.assistant`**) resolves without a manual `PYTHONPATH` when you use `pytest` from the config.
+
+**Docs site (maintainers):** install **`mdengine[docs]`**, then build or serve the MkDocs project from the repo root (`mkdocs.yml`). The published site URL is listed under **Documentation** in `[project.urls]` on PyPI ([GitHub Pages build](https://vishal7090.github.io/md-generator/)).
 
 ### Codeflow (`md_generator.codeflow`)
 
@@ -735,6 +884,8 @@ python -m md_generator.codeflow.cli.main scan path/to/src --output ./codeflow-ou
 | Path | Role |
 |------|------|
 | `LICENSE` | MIT license text |
+| `docs/` | **MkDocs** source (module guides, `index.md`); build with **`mdengine[docs]`** |
+| `mkdocs.yml` | MkDocs configuration |
 | `CODE_OF_CONDUCT.md` | [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 |
 | `src/md_generator/` | **Library source** (all formats + `api` subpackages); **audio/video** under [`media/audio/`](src/md_generator/media/audio/) and [`media/video/`](src/md_generator/media/video/); **graph-to-md** under [`graph/`](src/md_generator/graph/) |
 | `pyproject.toml` | Packaging, extras, CLI entry points, pytest |
