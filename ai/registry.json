@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "bundleVersion": "0.8.0",
+  "bundleVersion": "0.9.0",
   "description": "Maps mdengine distributable skill folders and agent files. Paths are relative to the directory containing this file (ai/).",
   "distribution": {
     "pypi": "mdengine",
@@ -123,6 +123,13 @@
       "directory": "skills/mdengine-ai-xlsx",
       "skillFile": "skills/mdengine-ai-xlsx/SKILL.md",
       "exampleFile": "skills/mdengine-ai-xlsx/references/example.md"
+    },
+    "mdengine-ai-log": {
+      "type": "area",
+      "area": "log",
+      "directory": "skills/mdengine-ai-log",
+      "skillFile": "skills/mdengine-ai-log/SKILL.md",
+      "exampleFile": "skills/mdengine-ai-log/references/example.md"
     }
   },
   "agents": {
@@ -186,6 +193,10 @@
       "file": "agents/mdengine-xlsx-agent.md",
       "pairedSkill": "mdengine-ai-xlsx"
     },
+    "mdengine-log-agent": {
+      "file": "agents/mdengine-log-agent.md",
+      "pairedSkill": "mdengine-ai-log"
+    },
     "mdengine-master-agent": {
       "file": "agent/master-agent.md",
       "pairedSkill": "mdengine-ai-global"
@@ -199,6 +210,7 @@
     "mdengine-ai-db",
     "mdengine-ai-graph",
     "mdengine-ai-image",
+    "mdengine-ai-log",
     "mdengine-ai-media",
     "mdengine-ai-openapi",
     "mdengine-ai-pdf",
@@ -220,6 +232,7 @@
       "db": "mdengine-ai-db",
       "graph": "mdengine-ai-graph",
       "image": "mdengine-ai-image",
+      "log": "mdengine-ai-log",
       "media": "mdengine-ai-media",
       "openapi": "mdengine-ai-openapi",
       "pdf": "mdengine-ai-pdf",
@@ -363,6 +376,34 @@
           "image"
         ],
         "priority": 95
+      },
+      {
+        "keyword": "log",
+        "areas": [
+          "log"
+        ],
+        "priority": 100
+      },
+      {
+        "keyword": "md-log",
+        "areas": [
+          "log"
+        ],
+        "priority": 95
+      },
+      {
+        "keyword": "log-to-md",
+        "areas": [
+          "log"
+        ],
+        "priority": 95
+      },
+      {
+        "keyword": "stacktrace",
+        "areas": [
+          "log"
+        ],
+        "priority": 75
       },
       {
         "keyword": "media",
@@ -630,7 +671,8 @@
           "graph",
           "openapi",
           "media",
-          "playwright"
+          "playwright",
+          "log"
         ],
         "priority": 30
       },
@@ -642,7 +684,8 @@
           "openapi",
           "media",
           "playwright",
-          "codeflow"
+          "codeflow",
+          "log"
         ],
         "priority": 25
       },

@@ -34,6 +34,7 @@ Supplements [mdengine-ai-global/SKILL.md](../mdengine-ai-global/SKILL.md). Conso
 | `md-graph` / `*-api` / `*-mcp` | `mdengine[graph]` |
 | `md-openapi` / `*-api` / `*-mcp` | `mdengine[openapi]` |
 | `md-codeflow` / `codeflow` / `*-api` / `*-mcp` | `mdengine[codeflow]` (+ optional treesitter/clang extras) |
+| `md-log` / `md-log-api` / `md-log-mcp` | `mdengine[log]` (+ `log-cluster`, `log-semantic`, `log-pretty`, `api`, `mcp` as needed) |
 | `mdengine` | meta-router CLI |
 
 ## Python import root

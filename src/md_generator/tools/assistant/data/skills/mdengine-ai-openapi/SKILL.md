@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-openapi
 description: "Documents pip-installed mdengine features for OpenAPI → Markdown: extras, CLIs, and public imports under md_generator.openapi. Use when the user mentions `md-openapi`, `md-openapi-api`, `md-openapi-mcp` or needs this capability after installing mdengine from PyPI. Package summary: OpenAPI (YAML/JSON) to deterministic Markdown, Mermaid, and graph outputs."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — OpenAPI → Markdown / docs bundle
 

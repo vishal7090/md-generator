@@ -1,7 +1,7 @@
 ---
 name: mdengine-global-architecture
 description: "Code-derived system view of mdengine: package boundaries, import relationships between md_generator top-level modules, and how CLIs/APIs/MCP routes relate. Use for cross-area questions; defer per-area details to mdengine-ai-<area> skills."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — global architecture (generated)
 
@@ -16,7 +16,7 @@ version: 0.8.0
 
 ## Module set
 
-Top-level installable feature packages discovered on disk: `archive`, `codeflow`, `db`, `graph`, `image`, `media`, `openapi`, `pdf`, `playwright`, `ppt`, `text`, `tools`, `url`, `word`, `xlsx`.
+Top-level installable feature packages discovered on disk: `archive`, `codeflow`, `db`, `graph`, `image`, `log`, `media`, `openapi`, `pdf`, `playwright`, `ppt`, `text`, `tools`, `url`, `word`, `xlsx`.
 
 ## Data flow
 
@@ -34,6 +34,7 @@ flowchart LR
   db["db"]
   graph["graph"]
   image["image"]
+  log["log"]
   media["media"]
   openapi["openapi"]
   pdf["pdf"]

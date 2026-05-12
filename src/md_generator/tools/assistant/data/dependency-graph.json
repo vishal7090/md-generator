@@ -9,6 +9,7 @@
     "db",
     "graph",
     "image",
+    "log",
     "media",
     "openapi",
     "pdf",
@@ -34,6 +35,11 @@
     {
       "source": "__root__",
       "target": "graph",
+      "weight": 1
+    },
+    {
+      "source": "__root__",
+      "target": "log",
       "weight": 1
     },
     {

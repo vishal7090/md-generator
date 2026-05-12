@@ -35,11 +35,12 @@ pip install "mdengine[codeflow]"
 ## Core layout (from repository scan)
 
 - **Package:** `md_generator.codeflow`
-- **Notable modules / subpackages:** `analyzers`, `api`, `cli`, `core`, `detectors`, `generators`, `graph`, `ingestion`, `lang_dispatch`, `mcp`, `models`, `parsers`, `rules`, `runtime`, `utils`
+- **Notable modules / subpackages:** `analyzers`, `api`, `cli`, `config`, `core`, `detectors`, `generators`, `graph`, `ingestion`, `lang_dispatch`, `mcp`, `models`, `parsers`, `rules`, `runtime`, `utils`, `worker`
 
 ## Edge cases (heuristic)
 
-- Install the correct **optional extra** for this area; missing deps surface at import or first CLI use.
+- `codeflow/config/codeflow_yaml.py`: optional imports / ImportError handling
+- `codeflow/core/extractor.py`: optional imports / ImportError handling
 - Prefer **`--help`** on each CLI before guessing flags.
 
 ## Prompt templates

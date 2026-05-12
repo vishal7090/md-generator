@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-media
 description: "Documents pip-installed mdengine features for media (audio/video/YouTube) → Markdown: extras, CLIs, and public imports under md_generator.media. Use when the user mentions `md-audio`, `md-audio-api`, `md-audio-mcp`, `md-video`, `md-video-api`, … or needs this capability after installing mdengine from PyPI. Package summary: Media helpers: document probing (ffprobe/ffmpeg) and audio/video to Markdown."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — Audio, video, YouTube → Markdown
 

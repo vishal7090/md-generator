@@ -19,6 +19,7 @@ _AREA_TITLES: dict[str, str] = {
     "db": "Database metadata → Markdown",
     "graph": "Graph (Neo4j / NetworkX) → Markdown",
     "image": "Image OCR → Markdown",
+    "log": "Logs / stack traces → Markdown",
     "media": "Audio, video, YouTube → Markdown",
     "openapi": "OpenAPI → Markdown / docs bundle",
     "pdf": "PDF → Markdown",
@@ -36,6 +37,7 @@ _EXTRA_BY_AREA: dict[str, str] = {
     "db": "db",
     "graph": "graph",
     "image": "image",
+    "log": "log",
     "media": "audio,video,youtube",
     "openapi": "openapi",
     "pdf": "pdf",
@@ -48,12 +50,15 @@ _EXTRA_BY_AREA: dict[str, str] = {
 }
 
 _SKILL_NAME = "mdengine-ai-{area}"
+# Areas whose `SKILL.md` is maintained manually (rich install/API/MCP docs); skip auto overwrite.
+_HAND_CURATED_AREA_SKILLS: frozenset[str] = frozenset({"log"})
 _DESCRIPTION_SEEDS: dict[str, str] = {
     "pdf": "Documents pip-installed mdengine features for PDF → Markdown: extras, CLIs, and public imports under md_generator.pdf.",
     "word": "Documents pip-installed mdengine features for Word (DOCX) → Markdown: extras, CLIs, and public imports under md_generator.word.",
     "ppt": "Documents pip-installed mdengine features for PowerPoint → Markdown: extras, CLIs, and public imports under md_generator.ppt.",
     "xlsx": "Documents pip-installed mdengine features for Excel/CSV → Markdown: extras, CLIs, and public imports under md_generator.xlsx.",
     "image": "Documents pip-installed mdengine features for Image OCR → Markdown: extras, CLIs, and public imports under md_generator.image.",
+    "log": "Documents pip-installed mdengine features for logs and stack traces → Markdown: extras, CLIs, and public imports under md_generator.log.",
     "text": "Documents pip-installed mdengine features for Text/JSON/XML → Markdown: extras, CLIs, and public imports under md_generator.text.",
     "archive": "Documents pip-installed mdengine features for ZIP archive → Markdown: extras, CLIs, and public imports under md_generator.archive.",
     "url": "Documents pip-installed mdengine features for URL (HTML) → Markdown: extras, CLIs, and public imports under md_generator.url.",
@@ -363,6 +368,7 @@ def build_global_consumer_skill_md(version: str) -> str:
         | `ppt` | PPTX → Markdown (`md-ppt`) |
         | `xlsx` | Excel/CSV → Markdown (`md-xlsx`) |
         | `image` / `image-ocr` | Raster OCR (`md-image`) |
+        | `log` | Logs / stack traces → Markdown (`md-log`, `md-log-api`, `md-log-mcp`); optional `log-cluster`, `log-semantic`, `log-pretty` |
         | `text` | TXT / JSON / XML (`md-text`) |
         | `archive` | ZIP extraction pipeline (`md-zip`) |
         | `url` / `url-full` | URL → Markdown (`md-url`; `url-full` adds post-convert for downloads) |
@@ -464,6 +470,8 @@ def run_generate(repo_root: Path, since_ref: str | None = None) -> None:
             continue
         skill_id = AREA_SKILL_IDS.get(area)
         if not skill_id or not skill_id.startswith("mdengine-ai-"):
+            continue
+        if area in _HAND_CURATED_AREA_SKILLS:
             continue
         sc = by_area.get(area, [])
         doc = _package_doc(md_root, area)

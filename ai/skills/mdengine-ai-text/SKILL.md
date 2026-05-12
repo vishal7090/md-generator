@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-text
 description: "Documents pip-installed mdengine features for Text/JSON/XML → Markdown: extras, CLIs, and public imports under md_generator.text. Use when the user mentions `md-text` or needs this capability after installing mdengine from PyPI. Package summary: txt-json-xml-to-md: convert .txt, .json, and .xml to Markdown."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — Text / JSON / XML → Markdown
 
@@ -35,11 +35,12 @@ pip install "mdengine[text]"
 ## Core layout (from repository scan)
 
 - **Package:** `md_generator.text`
-- **Notable modules / subpackages:** `api`, `convert_impl`, `converter`, `format_detect`, `md_emit_json`, `md_emit_txt`, `md_emit_xml`, `options`
+- **Notable modules / subpackages:** `api`, `convert_impl`, `converter`, `format_detect`, `md_emit_json`, `md_emit_txt`, `md_emit_xml`, `md_flatten`, `options`, `xml_parse`
 
 ## Edge cases (heuristic)
 
-- Install the correct **optional extra** for this area; missing deps surface at import or first CLI use.
+- `text/md_flatten.py`: optional imports / ImportError handling
+- `text/xml_parse.py`: optional imports / ImportError handling
 - Prefer **`--help`** on each CLI before guessing flags.
 
 ## Prompt templates

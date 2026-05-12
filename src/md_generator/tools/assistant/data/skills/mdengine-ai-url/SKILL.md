@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-url
 description: "Documents pip-installed mdengine features for URL (HTML) → Markdown: extras, CLIs, and public imports under md_generator.url. Use when the user mentions `md-url` or needs this capability after installing mdengine from PyPI. Package summary: Convert public HTTP(S) HTML pages to Markdown with downloaded assets."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — URL (HTML) → Markdown
 

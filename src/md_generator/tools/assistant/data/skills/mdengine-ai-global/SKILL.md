@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-global
 description: "Teaches use of the mdengine PyPI package after pip install: optional extras, console scripts, FastAPI and MCP entry points, and imports under md_generator. For architecture between packages, see ../global-skill.md."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — global skill (pip-installed library)
 
@@ -33,6 +33,7 @@ Python **3.10+**. Distribution name on PyPI: **`mdengine`**. Import package: **`
 | `ppt` | PPTX → Markdown (`md-ppt`) |
 | `xlsx` | Excel/CSV → Markdown (`md-xlsx`) |
 | `image` / `image-ocr` | Raster OCR (`md-image`) |
+| `log` | Logs / stack traces → Markdown (`md-log`, `md-log-api`, `md-log-mcp`); optional `log-cluster`, `log-semantic`, `log-pretty` |
 | `text` | TXT / JSON / XML (`md-text`) |
 | `archive` | ZIP extraction pipeline (`md-zip`) |
 | `url` / `url-full` | URL → Markdown (`md-url`; `url-full` adds post-convert for downloads) |

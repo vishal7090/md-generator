@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-db
 description: "Documents pip-installed mdengine features for Database → Markdown: extras, CLIs, and public imports under md_generator.db. Use when the user mentions `md-db`, `md-db-api`, `md-db-mcp` or needs this capability after installing mdengine from PyPI. Package summary: Database metadata to Markdown (LLM-ready, deterministic)."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — Database metadata → Markdown
 

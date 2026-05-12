@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-codeflow
 description: "Documents pip-installed mdengine features for Codeflow (code → Markdown): extras, CLIs, and public imports under md_generator.codeflow. Use when the user mentions `codeflow`, `md-codeflow`, `md-codeflow-api`, `md-codeflow-mcp` or needs this capability after installing mdengine from PyPI. Package summary: Multi-language execution flow extraction → Markdown, Mermaid, graph JSON, HTML."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — Code → architecture Markdown (codeflow)
 
@@ -38,11 +38,12 @@ pip install "mdengine[codeflow]"
 ## Core layout (from repository scan)
 
 - **Package:** `md_generator.codeflow`
-- **Notable modules / subpackages:** `analyzers`, `api`, `cli`, `core`, `detectors`, `generators`, `graph`, `ingestion`, `lang_dispatch`, `mcp`, `models`, `parsers`, `rules`, `runtime`, `utils`
+- **Notable modules / subpackages:** `analyzers`, `api`, `cli`, `config`, `core`, `detectors`, `generators`, `graph`, `ingestion`, `lang_dispatch`, `mcp`, `models`, `parsers`, `rules`, `runtime`, `utils`, `worker`
 
 ## Edge cases (heuristic)
 
-- Install the correct **optional extra** for this area; missing deps surface at import or first CLI use.
+- `codeflow/config/codeflow_yaml.py`: optional imports / ImportError handling
+- `codeflow/core/extractor.py`: optional imports / ImportError handling
 - Prefer **`--help`** on each CLI before guessing flags.
 
 ## Prompt templates

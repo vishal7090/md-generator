@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-word
 description: "Documents pip-installed mdengine features for Word (DOCX) → Markdown: extras, CLIs, and public imports under md_generator.word. Use when the user mentions `md-word` or needs this capability after installing mdengine from PyPI."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — Word (.docx) → Markdown
 

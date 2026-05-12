@@ -36,8 +36,9 @@ Install **`mdengine[api]`** plus the format extra(s), then run the **`app`** (or
 | Audio (Whisper) | `md_generator.media.audio.api.main:create_app` (**`--factory`**) or `…main:app` | `audio`, `api`, `mcp` |
 | Video (Whisper) | `md_generator.media.video.api.main:create_app` (**`--factory`**) or `…main:app` | `video`, `api`, `mcp` |
 | YouTube | `md_generator.media.youtube.api.main:create_app` (**`--factory`**) or `…main:app` | `youtube`, `api`, `mcp` |
+| Log → Markdown | `md_generator.log.api.main:app` | `log`, `api`, `mcp` |
 
-**Port note:** **`md-graph-api`** and **`md-video-api`** both default to **8012**; set **`GRAPH_TO_MD_PORT`** or **`MD_VIDEO_API_PORT`** when both run on one machine. **`md-openapi-api`** defaults to **8015** (`OPENAPI_TO_MD_PORT`) to avoid **`md-youtube-api`** (**8013**) and **`md-playwright-api`** (**8014**).
+**Port note:** **`md-graph-api`** and **`md-video-api`** both default to **8012**; set **`GRAPH_TO_MD_PORT`** or **`MD_VIDEO_API_PORT`** when both run on one machine. **`md-log-api`** also defaults to **8012** (`LOG_TO_MD_PORT` in `md_generator.log.api.run`); set **`LOG_TO_MD_PORT`** when colocating with graph or video. **`md-openapi-api`** defaults to **8015** (`OPENAPI_TO_MD_PORT`) to avoid **`md-youtube-api`** (**8013**) and **`md-playwright-api`** (**8014**).
 
 ---
 
@@ -72,6 +73,25 @@ Port **8012** (`GRAPH_TO_MD_PORT`): `POST /graph-to-md/run`, `/graph-to-md/job`,
 Port **8015** (`OPENAPI_TO_MD_PORT`): `POST /openapi-to-md/generate` (OpenAPI upload → ZIP), `/health`, MCP at **`/mcp`**.
 
 **Standalone `md-openapi-mcp` tools:** `api_validate_openapi_yaml`, `api_generate_readme_markdown`, `api_run_sync_zip_base64`.
+
+---
+
+## `md-log-api` (log-to-md)
+
+Runner: **`md-log-api`** → `md_generator.log.api.run:main` (Uvicorn **`md_generator.log.api.main:app`**). Env prefix **`LOG_TO_MD_`**: `LOG_TO_MD_HOST`, `LOG_TO_MD_PORT` (default **8012**), `LOG_TO_MD_MAX_SYNC_ZIP_MB`, `LOG_TO_MD_MAX_LOG_UPLOAD_MB`, `LOG_TO_MD_JOB_SQLITE_PATH`, `LOG_TO_MD_JOB_WORKSPACE_ROOT`, `LOG_TO_MD_CORS_ORIGINS`.
+
+Routes:
+
+- `GET /health`
+- `POST /log-to-md/run` — JSON body → synchronous ZIP (`application/zip`)
+- `POST /log-to-md/run/upload` — multipart log file + optional `config` (JSON string)
+- `POST /log-to-md/job` — async job from JSON body → `{ "job_id" }`
+- `POST /log-to-md/job/upload` — async job from uploaded log
+- `GET /log-to-md/job/{job_id}` — status
+- `GET /log-to-md/job/{job_id}/download` — ZIP when `COMPLETED`
+- `GET /log-to-md/job/{job_id}/events` — SSE progress
+
+MCP is mounted at **`/mcp`** on the same app. Standalone: **`md-log-mcp`** (`md_generator.log.api.mcp_server:main`).
 
 ---
 
@@ -129,6 +149,7 @@ Swagger: **`/docs`** when running.
 | Database | `md-db-mcp` or `python -m md_generator.db.api.mcp_server` |
 | Graph | `md-graph-mcp` or `python -m md_generator.graph.api.mcp_server` |
 | OpenAPI | `md-openapi-mcp` or `python -m md_generator.openapi.api.mcp_server` |
+| Log | `md-log-mcp` or `python -m md_generator.log.api.mcp_server` |
 
 Install **`mdengine[mcp]`** (and usually **`[api]`** for HTTP) so MCP imports resolve.
 
@@ -152,5 +173,6 @@ Install **`mdengine[mcp]`** (and usually **`[api]`** for HTTP) so MCP imports re
 | Audio | `MD_AUDIO_` | … port **8011** |
 | Video | `MD_VIDEO_` | … port **8012** |
 | YouTube | `MD_YOUTUBE_` | … port **8013** |
+| Log → Markdown | `LOG_TO_MD_` | `LOG_TO_MD_PORT` (default **8012**), `LOG_TO_MD_MAX_SYNC_ZIP_MB`, `LOG_TO_MD_MAX_LOG_UPLOAD_MB`, `LOG_TO_MD_JOB_SQLITE_PATH`, `LOG_TO_MD_JOB_WORKSPACE_ROOT`, `LOG_TO_MD_CORS_ORIGINS`, `LOG_TO_MD_HOST` |
 
 Exact names live in each package’s `api/settings` or `api/app` module.

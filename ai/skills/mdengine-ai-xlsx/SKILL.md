@@ -1,7 +1,7 @@
 ---
 name: mdengine-ai-xlsx
 description: "Documents pip-installed mdengine features for Excel/CSV → Markdown: extras, CLIs, and public imports under md_generator.xlsx. Use when the user mentions `md-xlsx` or needs this capability after installing mdengine from PyPI."
-version: 0.8.0
+version: 0.9.0
 ---
 # mdengine — Excel / CSV → Markdown
 

@@ -19,7 +19,7 @@ skills/<skill-folder>/
 |--------|------|
 | [`skills/mdengine-ai-global/`](skills/mdengine-ai-global/) | Global skill — install, extras, CLI overview |
 | [`skills/mdengine-reference/`](skills/mdengine-reference/) | CLI ↔ extra cheat sheet |
-| [`skills/mdengine-ai-<area>/`](skills/) | Area skills: `archive`, `codeflow`, `db`, … — same pattern |
+| [`skills/mdengine-ai-<area>/`](skills/) | Area skills: `archive`, `codeflow`, `db`, `log`, … — same pattern |
 
 Bind **`SKILL.md`** in your AI tool; point contributors to **`references/example.md`** for runnable snippets.
 
