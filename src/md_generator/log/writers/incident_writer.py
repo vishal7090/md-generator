@@ -1,42 +1,60 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 
+from md_generator.log.incidents.incident_engine import build_incidents
+from md_generator.log.incidents.models import Incident
 from md_generator.log.parser.models import LogRecord
 from md_generator.log.utils.io import write_text
 
 
-def group_incidents(records: list[LogRecord]) -> dict[str, list[LogRecord]]:
-    by_fp: dict[str, list[LogRecord]] = defaultdict(list)
-    for r in records:
-        key = r.fingerprint or r.message[:200]
-        by_fp[key].append(r)
-    return {k: v for k, v in by_fp.items() if len(v) >= 2}
+def _format_ts(ts: object | None) -> str:
+    if ts is None:
+        return "n/a"
+    return str(ts)
 
 
-def write_incidents(root: Path, records: list[LogRecord]) -> None:
-    groups = group_incidents(records)
-    sorted_groups = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
-    for i, (_fp, rs) in enumerate(sorted_groups[:200], start=1):
-        rs_sorted = sorted(rs, key=lambda x: (x.timestamp or x.line_number))
-        first = rs_sorted[0]
-        last = rs_sorted[-1]
-        title = first.message.replace("\n", " ")[:80]
-        lines = [
-            f"# Incident {i:03d}",
-            "",
-            f"**Occurrences:** {len(rs)}",
-            f"**First seen:** {first.timestamp or 'n/a'} (line {first.line_number}, `{first.source_file.name}`)",
-            f"**Last seen:** {last.timestamp or 'n/a'}",
-            "",
-            "## Representative messages",
-            "",
-        ]
-        for r in rs_sorted[:8]:
-            m = r.message.replace("\n", " ")[:500]
-            lines.append(f"- `{r.level}` — {m}")
-        if len(rs_sorted) > 8:
-            lines.append(f"- … _{len(rs_sorted) - 8} more_")
+def render_incident_markdown(inc: Incident, *, index: int) -> str:
+    lines = [
+        f"# Incident: {inc.title}",
+        "",
+        "## Summary",
+        f"- Occurrences: {len(inc.occurrences)}",
+        f"- Severity: {inc.severity}",
+        f"- First Seen: {_format_ts(inc.first_seen)}",
+        f"- Last Seen: {_format_ts(inc.last_seen)}",
+        f"- Incident ID: `{inc.incident_id}`",
+        "",
+        "## Representative Messages",
+        "",
+    ]
+    for m in inc.representative_messages:
+        lines.append(f"- {m}")
+    if not inc.representative_messages:
+        lines.append("_None_")
+    lines.extend(["", "## Related Stacktraces", ""])
+    for st in inc.stacktraces:
+        lines.append("```")
+        lines.append(st)
+        lines.append("```")
         lines.append("")
-        write_text(root / "incidents" / f"incident_{i:03d}.md", "\n".join(lines))
+    if not inc.stacktraces:
+        lines.append("_None_")
+    lines.extend(["", "## Affected Services", ""])
+    for svc in inc.affected_services:
+        lines.append(f"- `{svc}`")
+    if not inc.affected_services:
+        lines.append("_None_")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_incidents(root: Path, records: list[LogRecord], cfg: object) -> list[Incident]:
+    from md_generator.log.config.schemas import LogRunConfig
+
+    assert isinstance(cfg, LogRunConfig)
+    incidents = build_incidents(records, cfg)
+    for i, inc in enumerate(incidents[:500], start=1):
+        body = render_incident_markdown(inc, index=i)
+        write_text(root / "incidents" / f"incident_{i:03d}.md", body)
+    return incidents

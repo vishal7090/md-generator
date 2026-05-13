@@ -9,14 +9,22 @@ import yaml
 from md_generator.log.config.schemas import (
     AggregationSection,
     ChunkSection,
+    ChunkingSection,
     ClusteringSection,
+    CorrelationSection,
+    EmbeddingsSection,
     ExecutionSection,
+    IncidentsSection,
     InputSection,
+    IntelligenceSection,
+    KnowledgeGraphSection,
     LogRunConfig,
     NormalizationSection,
     OutputSection,
     ParserSection,
     PluginsSection,
+    SearchSection,
+    TimelineSection,
 )
 
 
@@ -121,7 +129,50 @@ def _config_from_raw(raw: dict[str, Any]) -> LogRunConfig:
                 "encoding_fallbacks": ["utf-8", "utf-8-sig", "latin-1", "cp1252"],
             },
         ),
-        plugins=_section(raw, "plugins", PluginsSection, {"enrichers": []}),
+        plugins=_section(raw, "plugins", PluginsSection, {"enrichers": [], "parsers": [], "writers": [], "classifiers": []}),
+        incidents=_section(
+            raw,
+            "incidents",
+            IncidentsSection,
+            {"min_occurrences": 2, "levels": ["ERROR", "FATAL", "WARN"], "stacktrace_aware": True},
+        ),
+        chunking=_section(
+            raw,
+            "chunking",
+            ChunkingSection,
+            {
+                "enabled": False,
+                "strategies": ["incident", "timeline", "stacktrace", "cluster", "service"],
+                "chunk_id_namespace": "chunk",
+                "max_chunk_bytes": 256_000,
+            },
+        ),
+        embeddings=_section(
+            raw,
+            "embeddings",
+            EmbeddingsSection,
+            {"enabled": False, "exporters": [], "output_subdir": "embeddings"},
+        ),
+        correlation=_section(
+            raw,
+            "correlation",
+            CorrelationSection,
+            {"enabled": False, "timeline_window_seconds": 300},
+        ),
+        knowledge_graph=_section(
+            raw,
+            "knowledge_graph",
+            KnowledgeGraphSection,
+            {"enabled": False, "mermaid": True},
+        ),
+        timeline=_section(
+            raw,
+            "timeline",
+            TimelineSection,
+            {"enabled": False, "causal_window_seconds": 120},
+        ),
+        intelligence=_section(raw, "intelligence", IntelligenceSection, {"enabled": False}),
+        search=_section(raw, "search", SearchSection, {"index_path": None}),
     )
 
 

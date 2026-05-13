@@ -26,7 +26,6 @@ from md_generator.log.parser.multiline_parser import parse_file_lines
 from md_generator.log.parser.parser_registry import select_line_regex_for_sample
 from md_generator.log.utils.io import ensure_dir
 from md_generator.log.writers.assets_writer import write_run_metadata
-from md_generator.log.writers.chunk_writer import write_rag_chunks
 from md_generator.log.writers.markdown_writer import render_all
 
 
@@ -139,12 +138,43 @@ def run_pipeline(ctx: RunContext) -> RunContext:
 
     try:
         render_all(out, all_records, cfg_render, cluster_labels=cluster_labels)
-        if cfg.chunk.enabled or cfg.output.generate_chunks:
-            write_rag_chunks(
-                out,
-                all_records,
-                records_per_chunk=cfg.chunk.records_per_md_chunk,
-            )
+        incidents: list = []
+        if cfg.output.generate_incidents:
+            from md_generator.log.incidents.incident_engine import build_incidents
+            from md_generator.log.writers.incident_writer import write_incidents as write_incident_files
+
+            incidents = build_incidents(all_records, cfg)
+            write_incident_files(out, all_records, cfg)
+        if cfg.chunking.enabled or cfg.output.generate_chunks or cfg.embeddings.enabled or cfg.embeddings.exporters:
+            from md_generator.log.writers.chunk_writer import write_semantic_chunks
+
+            chunks = write_semantic_chunks(out, all_records, incidents, cfg)
+        else:
+            chunks = []
+        if cfg.embeddings.enabled or cfg.embeddings.exporters:
+            from md_generator.log.embeddings.embedding_exporter import export_embeddings
+
+            export_embeddings(out, chunks, cfg)
+        if cfg.correlation.enabled:
+            from md_generator.log.writers.correlation_writer import write_correlation_artifacts
+
+            ensure_dir(out / "correlation")
+            write_correlation_artifacts(out, all_records)
+        if cfg.knowledge_graph.enabled:
+            from md_generator.log.knowledge_graph.graph_exporter import export_graph
+
+            ensure_dir(out / "graphs")
+            export_graph(out, all_records, cfg)
+        if cfg.timeline.enabled:
+            from md_generator.log.timeline.timeline_engine import write_timeline_artifacts
+
+            ensure_dir(out / "timeline")
+            write_timeline_artifacts(out, all_records, incidents, cfg)
+        if cfg.intelligence.enabled:
+            from md_generator.log.intelligence.root_cause_engine import write_root_cause_artifacts
+
+            ensure_dir(out / "intelligence")
+            write_root_cause_artifacts(out, incidents)
     except OSError as e:
         raise WriterError(str(e)) from e
 

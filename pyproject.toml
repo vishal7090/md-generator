@@ -151,6 +151,13 @@ log-semantic = [
 log-pretty = [
   "loguru>=0.7.0",
 ]
+log-otel-proto = [
+  "opentelemetry-proto>=1.27.0",
+  "protobuf>=4.25.0",
+]
+log-export-parquet = [
+  "pyarrow>=14.0.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
@@ -260,6 +267,7 @@ md-codeflow-mcp = "md_generator.codeflow.api.mcp_server:main"
 md-log = "md_generator.log.cli.main:main"
 md-log-api = "md_generator.log.api.run:main"
 md-log-mcp = "md_generator.log.api.mcp_server:main"
+md-otel = "md_generator.otel.cli.main:main"
 mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]

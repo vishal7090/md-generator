@@ -45,6 +45,22 @@ def main(argv: list[str] | None = None) -> int:
         from md_generator.log.cli.main import main as log_main
 
         return log_main(argv[1:])
+    if argv[0] == "otel-to-md":
+        from md_generator.otel.cli.main import main as otel_main
+
+        return otel_main(argv[1:])
+    if argv[0] == "search":
+        from md_generator.log.search.cli import run_search
+        from pathlib import Path
+
+        if len(argv) < 2:
+            print('Usage: mdengine search "query" [--index PATH]', file=sys.stderr)
+            return 2
+        query = argv[1]
+        index = Path(argv[3]) if len(argv) >= 4 and argv[2] == "--index" else Path("./log-docs")
+        for cid, score in run_search(query, index):
+            print(f"{score:.4f}\t{cid}")
+        return 0
     if argv[0] == "graph-to-md":
         from md_generator.graph.cli.main import main as graph_main
 

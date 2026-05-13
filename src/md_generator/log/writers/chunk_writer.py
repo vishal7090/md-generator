@@ -1,48 +1,56 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
+from md_generator.log.chunking.chunk_engine import iter_semantic_chunks
+from md_generator.log.chunking.chunk_models import SemanticChunk
+from md_generator.log.config.schemas import LogRunConfig
+from md_generator.log.incidents.models import Incident
 from md_generator.log.parser.models import LogRecord
 from md_generator.log.utils.io import write_text
 
 
-def write_rag_chunks(
+def write_semantic_chunks(
     root: Path,
     records: list[LogRecord],
-    *,
-    records_per_chunk: int,
-) -> None:
-    if not records:
-        return
-    chunk_dir = root / "chunks"
+    incidents: list[Incident],
+    cfg: LogRunConfig,
+) -> list[SemanticChunk]:
+    chunks = list(iter_semantic_chunks(records, incidents, cfg))
+    if not chunks and cfg.chunk.enabled:
+        # legacy fixed-size fallback
+        from md_generator.log.writers.chunk_writer import write_rag_chunks
+
+        write_rag_chunks(root, records, records_per_chunk=cfg.chunk.records_per_md_chunk)
+        return []
     meta: list[dict[str, object]] = []
-    for idx, start in enumerate(range(0, len(records), records_per_chunk), start=1):
-        batch = records[start : start + records_per_chunk]
-        lines = [
-            f"<!-- chunk_id=log_chunk_{idx:04d} -->",
-            f"# Log chunk {idx:04d}",
+    for i, ch in enumerate(chunks, start=1):
+        fname = f"chunk_{i:04d}.md"
+        body = [
+            f"<!-- chunk_id={ch.chunk_id} -->",
+            f"# {ch.title}",
             "",
-            f"_Records {start + 1}–{start + len(batch)} of {len(records)}_",
+            ch.content,
             "",
         ]
-        for r in batch:
-            ts = r.timestamp.isoformat() if r.timestamp else "n/a"
-            lines.append(f"## {r.level} @ {ts}")
-            lines.append("")
-            lines.append(r.message[:4000])
-            lines.append("")
-        path = chunk_dir / f"chunk_{idx:04d}.md"
-        write_text(path, "\n".join(lines))
+        path = root / "chunks" / fname
+        write_text(path, "\n".join(body))
         meta.append(
             {
-                "chunk_id": f"log_chunk_{idx:04d}",
+                "chunk_id": ch.chunk_id,
+                "chunk_type": ch.chunk_type,
                 "path": path.relative_to(root).as_posix(),
-                "record_start": start + 1,
-                "record_end": start + len(batch),
+                "metadata": ch.metadata,
+                "source_refs": ch.source_refs,
             },
         )
-    write_text(
-        root / "chunks" / "manifest.json",
-        json.dumps(meta, indent=2) + "\n",
-    )
+    if meta:
+        write_text(root / "chunks" / "manifest.json", json.dumps(meta, indent=2) + "\n")
+    return chunks
+
+
+def iter_chunk_export_records(chunks: Iterator[SemanticChunk]) -> Iterator[dict[str, object]]:
+    for ch in chunks:
+        yield {"chunk_id": ch.chunk_id, "text": ch.content, "metadata": ch.metadata}

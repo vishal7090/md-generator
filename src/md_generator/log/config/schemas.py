@@ -67,6 +67,61 @@ class ExecutionSection:
 @dataclass
 class PluginsSection:
     enrichers: list[str] = field(default_factory=list)
+    parsers: list[str] = field(default_factory=list)
+    writers: list[str] = field(default_factory=list)
+    classifiers: list[str] = field(default_factory=list)
+
+
+@dataclass
+class IncidentsSection:
+    min_occurrences: int = 2
+    levels: list[str] = field(default_factory=lambda: ["ERROR", "FATAL", "WARN"])
+    stacktrace_aware: bool = True
+
+
+@dataclass
+class ChunkingSection:
+    enabled: bool = False
+    strategies: list[str] = field(
+        default_factory=lambda: ["incident", "timeline", "stacktrace", "cluster", "service"],
+    )
+    chunk_id_namespace: str = "chunk"
+    max_chunk_bytes: int = 256_000
+
+
+@dataclass
+class EmbeddingsSection:
+    enabled: bool = False
+    exporters: list[str] = field(default_factory=list)
+    output_subdir: str = "embeddings"
+
+
+@dataclass
+class CorrelationSection:
+    enabled: bool = False
+    timeline_window_seconds: int = 300
+
+
+@dataclass
+class KnowledgeGraphSection:
+    enabled: bool = False
+    mermaid: bool = True
+
+
+@dataclass
+class TimelineSection:
+    enabled: bool = False
+    causal_window_seconds: int = 120
+
+
+@dataclass
+class IntelligenceSection:
+    enabled: bool = False
+
+
+@dataclass
+class SearchSection:
+    index_path: str | None = None
 
 
 @dataclass
@@ -80,6 +135,14 @@ class LogRunConfig:
     chunk: ChunkSection = field(default_factory=ChunkSection)
     execution: ExecutionSection = field(default_factory=ExecutionSection)
     plugins: PluginsSection = field(default_factory=PluginsSection)
+    incidents: IncidentsSection = field(default_factory=IncidentsSection)
+    chunking: ChunkingSection = field(default_factory=ChunkingSection)
+    embeddings: EmbeddingsSection = field(default_factory=EmbeddingsSection)
+    correlation: CorrelationSection = field(default_factory=CorrelationSection)
+    knowledge_graph: KnowledgeGraphSection = field(default_factory=KnowledgeGraphSection)
+    timeline: TimelineSection = field(default_factory=TimelineSection)
+    intelligence: IntelligenceSection = field(default_factory=IntelligenceSection)
+    search: SearchSection = field(default_factory=SearchSection)
 
     def resolved_input_paths(self) -> list[Path]:
         return [Path(p).expanduser().resolve() for p in self.input.paths if str(p).strip()]

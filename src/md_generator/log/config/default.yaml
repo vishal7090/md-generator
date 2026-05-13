@@ -46,3 +46,45 @@ execution:
 
 plugins:
   enrichers: []
+
+incidents:
+  min_occurrences: 2
+  levels:
+    - ERROR
+    - FATAL
+    - WARN
+  stacktrace_aware: true
+
+chunking:
+  enabled: false
+  strategies:
+    - incident
+    - timeline
+    - stacktrace
+    - cluster
+    - service
+  chunk_id_namespace: chunk
+  max_chunk_bytes: 256000
+
+embeddings:
+  enabled: false
+  exporters: []
+  output_subdir: embeddings
+
+correlation:
+  enabled: false
+  timeline_window_seconds: 300
+
+knowledge_graph:
+  enabled: false
+  mermaid: true
+
+timeline:
+  enabled: false
+  causal_window_seconds: 120
+
+intelligence:
+  enabled: false
+
+search:
+  index_path: null

@@ -21,6 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enqueue background job (prints job_id; SQLite job store)",
     )
+    p.add_argument("--export-jsonl", action="store_true", help="Export embedding-ready JSONL chunks")
+    p.add_argument("--export-parquet", action="store_true", help="Export embedding-ready Parquet chunks")
     return p
 
 
@@ -38,6 +40,12 @@ def main(argv: list[str] | None = None) -> int:
         overrides.setdefault("output", {})["path"] = str(ns.output)
     if ns.preset is not None:
         overrides.setdefault("parser", {})["preset"] = ns.preset
+    if ns.export_jsonl:
+        overrides.setdefault("embeddings", {})["enabled"] = True
+        overrides.setdefault("embeddings", {}).setdefault("exporters", []).append("jsonl")
+    if ns.export_parquet:
+        overrides.setdefault("embeddings", {})["enabled"] = True
+        overrides.setdefault("embeddings", {}).setdefault("exporters", []).append("parquet")
 
     cfg = load_run_config(cfg_path if cfg_path is not None else None, overrides if overrides else None)
     cfg = cfg.normalized()

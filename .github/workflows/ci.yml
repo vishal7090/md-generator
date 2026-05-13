@@ -25,7 +25,8 @@ jobs:
           pip install ".[db,api,mcp,dev]"
 
       - name: Pytest
-        run: python -m pytest db-to-md/tests -v -m "not integration"
+        run: |
+          python -m pytest db-to-md/tests log-to-md/tests -v -m "not integration"
 
       - name: Build distribution
         run: |

@@ -1,5 +1,5 @@
-# Log Analysis API
+# Log HTTP API
 
-FastAPI title: `log-to-md`.
+`md-log-api` serves FastAPI routes under `/log-to-md/*` (see `md_generator.log.api.main`).
 
-Detected endpoints: `/health, /log-to-md/run, /log-to-md/run/upload, /log-to-md/job, /log-to-md/job/upload, /log-to-md/job/{job_id}, /download, /events, /stream`.
+MCP is mounted at `/mcp` when using the API process.
