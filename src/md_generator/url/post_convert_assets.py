@@ -6,6 +6,7 @@ import re
 import sys
 from pathlib import Path
 
+from md_generator.archive.extractors import detect_archive_format
 from md_generator.url.options import DEFAULT_IMAGE_TO_MD_ENGINES, ConvertOptions
 
 INLINE_CAP = 48_000
@@ -89,7 +90,7 @@ def process_downloaded_files(page_root: Path, options: ConvertOptions) -> str:
             _try_pptx(src, slug, extracted_md, page_root, options, log_entries, blocks)
         elif suf in (".xlsx", ".xlsm", ".csv"):
             _try_xlsx(src, slug, extracted_md, page_root, options, log_entries, blocks)
-        elif suf == ".zip":
+        elif detect_archive_format(src) is not None:
             _try_zip(src, slug, extracted_md, page_root, options, log_entries, blocks)
         elif suf in (".txt", ".json", ".xml"):
             _try_text(src, slug, extracted_md, page_root, options, log_entries, blocks)
@@ -266,14 +267,14 @@ def _try_zip(
     blocks: list[str],
 ) -> None:
     try:
-        from md_generator.archive.convert_impl import convert_zip
+        from md_generator.archive.convert_impl import convert_archive
         from md_generator.archive.options import ConvertOptions as ArchiveConvertOptions
     except ImportError as e:
         _log_append(log_entries, src.name, "error", f"missing archive extra: {e}")
         return
     out_sub = extracted_md / f"{slug}_zip"
     try:
-        convert_zip(
+        convert_archive(
             src,
             out_sub,
             ArchiveConvertOptions(verbose=options.verbose, artifact_layout=True),
@@ -282,11 +283,11 @@ def _try_zip(
         if doc.is_file():
             rel = _rel_from_root(doc, page_root)
             body = doc.read_text(encoding="utf-8", errors="replace")
-            snippet = body if len(body) <= INLINE_CAP else f"[View extracted ZIP]({rel})"
-            blocks.append(f"### `{src.name}` (ZIP)\n\n{snippet}\n")
-            _log_append(log_entries, src.name, "ok", "zip")
+            snippet = body if len(body) <= INLINE_CAP else f"[View extracted archive]({rel})"
+            blocks.append(f"### `{src.name}` (archive)\n\n{snippet}\n")
+            _log_append(log_entries, src.name, "ok", "archive")
         else:
-            _log_append(log_entries, src.name, "error", "no document.md after zip convert")
+            _log_append(log_entries, src.name, "error", "no document.md after archive convert")
     except Exception as e:
         _log_append(log_entries, src.name, "error", str(e))
         if options.verbose:

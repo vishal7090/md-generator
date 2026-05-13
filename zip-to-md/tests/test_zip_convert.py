@@ -46,7 +46,7 @@ def test_convert_zip_artifact_skips_junk_and_indexes(tmp_path: Path) -> None:
     doc = out / "document.md"
     assert doc.is_file()
     text = doc.read_text(encoding="utf-8")
-    assert "# ZIP Content Documentation" in text
+    assert "# Archive Content Documentation" in text
     assert "## File Index" in text
     assert "`notes/hello.txt`" in text
     assert "`readme.md`" in text
@@ -92,7 +92,7 @@ def test_nested_zip_recursive_expansion(tmp_path: Path) -> None:
     text = (out / "document.md").read_text(encoding="utf-8")
     assert "nested/inner_unzipped/deep/note.txt" in text
     assert "deep hello" in text
-    assert "Nested ZIP archive" in text or "inner.zip" in text
+    assert "Nested archive" in text or "inner.zip" in text
 
 
 def test_nested_zip_disabled(tmp_path: Path) -> None:
