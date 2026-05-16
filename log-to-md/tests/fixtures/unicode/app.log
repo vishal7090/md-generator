@@ -1,0 +1,5 @@
+2024-01-15T10:00:00Z INFO Application started — café résumé
+2024-01-15T10:00:01Z ERROR Database connection failed: データベース接続失敗
+2024-01-15T10:00:02Z WARN Retrying connection 🔄
+2024-01-15T10:00:03Z ERROR Database connection failed
+2024-01-15T10:00:04Z INFO Приложение восстановлено ✓
