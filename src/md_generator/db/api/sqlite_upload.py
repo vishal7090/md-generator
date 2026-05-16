@@ -15,6 +15,8 @@ class SqliteUploadOutputSection(BaseModel):
     split_files: bool = True
     write_combined_feature_markdown: bool = False
     readme_feature_merge: Literal["none", "inline", "toc"] = "none"
+    write_manifest: bool = True
+    markdown_cross_links: bool = True
 
 
 class SqliteUploadFeaturesSection(BaseModel):
@@ -70,6 +72,8 @@ class SqliteUploadJsonBody(BaseModel):
             split_files=self.output.split_files,
             write_combined_feature_markdown=write_combined,
             readme_feature_merge=merge,
+            write_manifest=self.output.write_manifest,
+            markdown_cross_links=self.output.markdown_cross_links,
             include=inc,
             exclude=frozenset(self.features.exclude),
             workers=self.execution.workers,

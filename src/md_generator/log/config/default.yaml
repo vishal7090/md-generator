@@ -1,11 +1,12 @@
 input:
   paths: []
+  otel_path: null
 
 parser:
   preset: generic
-  line_regex: null
   fuzzy_timestamp: false
   auto_detect: false
+  preset_dirs: []
 
 normalization:
   redact_pii: false
@@ -29,6 +30,7 @@ output:
   generate_incidents: true
   generate_clusters: false
   generate_chunks: false
+  frontmatter: false
 
 chunk:
   enabled: false
@@ -43,6 +45,94 @@ execution:
     - utf-8-sig
     - latin-1
     - cp1252
+  batch_records: 10000
+  use_runtime: false
+  distributed: false
 
 plugins:
   enrichers: []
+
+incidents:
+  min_occurrences: 2
+  levels:
+    - ERROR
+    - FATAL
+    - WARN
+  stacktrace_aware: true
+
+chunking:
+  enabled: false
+  strategies:
+    - incident
+    - timeline
+    - stacktrace
+    - cluster
+    - service
+  chunk_id_namespace: chunk
+  max_chunk_bytes: 256000
+
+embeddings:
+  enabled: false
+  exporters: []
+  output_subdir: embeddings
+
+correlation:
+  enabled: false
+  timeline_window_seconds: 300
+  cross_source: false
+
+knowledge_graph:
+  enabled: false
+  mermaid: true
+
+timeline:
+  enabled: false
+  causal_window_seconds: 120
+
+intelligence:
+  enabled: false
+
+search:
+  index_path: null
+
+incremental:
+  enabled: false
+  checkpoint_path: null
+
+ingestion:
+  archive_cleanup: true
+  use_archive_bridge: true
+
+noise_reduction:
+  enabled: false
+  dedupe: true
+  entropy_threshold: 0.15
+  min_message_length: 4
+
+streaming:
+  enabled: false
+  source: tail
+  batch_size: 100
+  kafka_brokers: localhost:9092
+  kafka_topic: logs
+  kafka_group: md-log
+  redis_url: redis://localhost:6379
+  redis_stream: logs
+  redis_group: md-log
+  websocket_url: ws://localhost:8765
+
+visualization:
+  enabled: false
+
+documentation:
+  enabled: false
+
+topology:
+  enabled: false
+
+linking:
+  enabled: false
+
+governance:
+  enabled: false
+  classify_pii: true

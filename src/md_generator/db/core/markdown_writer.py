@@ -8,6 +8,7 @@ from typing import Any, Iterable
 from md_generator.db.core.models import (
     ClusterInfo,
     ColumnInfo,
+    DependencyEdge,
     ForeignKeyInfo,
     IndexInfo,
     MongoCollectionInfo,
@@ -17,6 +18,7 @@ from md_generator.db.core.models import (
     RoutineInfo,
     RunMetadata,
     SequenceInfo,
+    SynonymInfo,
     TableDetail,
     TriggerInfo,
     ViewInfo,
@@ -96,22 +98,40 @@ def _indexes_section(indexes: tuple[IndexInfo, ...]) -> str:
     return "\n".join(parts)
 
 
-def format_table_markdown(detail: TableDetail, indexes: tuple[IndexInfo, ...]) -> str:
+def _related_section(related: list[tuple[str, str]]) -> str:
+    if not related:
+        return ""
+    lines = ["## Related\n\n"]
+    for label, href in sorted(related, key=lambda x: x[0].lower()):
+        lines.append(f"- [{label}]({href})\n")
+    lines.append("\n")
+    return "".join(lines)
+
+
+def format_table_markdown(
+    detail: TableDetail,
+    indexes: tuple[IndexInfo, ...],
+    *,
+    related: list[tuple[str, str]] | None = None,
+) -> str:
     t = detail.table
     title = f"{t.schema}.{t.name}" if t.schema else t.name
     lines = [
         f"# Table: `{title}`\n",
     ]
     if t.comment:
-        lines.append(f"**Comment:** {t.comment}\n")
+        lines.append(f"\n**Description:** {t.comment}\n")
     pk = ", ".join(f"`{c}`" for c in detail.primary_key) if detail.primary_key else "_None_"
-    lines.append(f"## Primary key\n\n{pk}\n")
-    lines.append("## Columns\n\n")
+    lines.append(f"\n## Primary key\n\n{pk}\n")
+    lines.append("\n## Columns\n\n")
     lines.append(_columns_table(detail.columns))
-    lines.append("## Foreign keys\n\n")
+    lines.append("\n## Foreign keys\n\n")
     lines.append(_fk_table(detail.foreign_keys))
-    lines.append("## Indexes (on this table)\n\n")
+    lines.append("\n## Indexes (on this table)\n\n")
     lines.append(_indexes_section(indexes))
+    if related:
+        lines.append("\n")
+        lines.append(_related_section(related))
     return "\n".join(lines)
 
 
@@ -128,8 +148,10 @@ def format_view_markdown(v: ViewInfo) -> str:
 def format_routine_markdown(r: RoutineInfo) -> str:
     title = f"{r.schema}.{r.name}" if r.schema else r.name
     body = [f"# {r.kind.title()}: `{title}`\n"]
+    if r.comment:
+        body.append(f"\n**Description:** {r.comment}\n")
     if r.language:
-        body.append(f"**Language:** {r.language}\n")
+        body.append(f"\n**Language:** {r.language}\n")
     if r.definition:
         body.append("\n## Definition\n\n```sql\n" + r.definition.strip() + "\n```\n")
     else:
@@ -187,6 +209,32 @@ def format_package_markdown(pkg: PackageInfo) -> str:
     if not pkg.spec_source and not pkg.body_source:
         parts.append("_Sources not available._\n")
     return "".join(parts)
+
+
+def format_synonym_markdown(s: SynonymInfo) -> str:
+    title = f"{s.schema}.{s.name}" if s.schema else s.name
+    parts = [
+        f"# Synonym: `{title}`\n\n",
+        f"**Base object:** `{s.base_object}`\n",
+    ]
+    if s.comment:
+        parts.append(f"\n**Description:** {s.comment}\n")
+    return "".join(parts)
+
+
+def format_dependencies_markdown(edges: list[DependencyEdge]) -> str:
+    lines = [
+        "# Object dependencies\n",
+        "\n| Referencing | Type | Referenced | Type |\n",
+        "| --- | --- | --- | --- |\n",
+    ]
+    for e in edges:
+        ref = f"{e.referencing_schema}.{e.referencing_name}"
+        tgt = f"{e.referenced_schema}.{e.referenced_name}" if e.referenced_schema else e.referenced_name
+        lines.append(
+            f"| `{ref}` | {e.referencing_kind} | `{tgt}` | {e.referenced_kind} |\n"
+        )
+    return "".join(lines)
 
 
 def format_cluster_markdown(c: ClusterInfo) -> str:

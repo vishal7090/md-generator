@@ -6,7 +6,6 @@ from md_generator.log.config.schemas import LogRunConfig
 from md_generator.log.parser.models import LogRecord
 from md_generator.log.utils.io import ensure_dir, write_text
 from md_generator.log.writers.cluster_markdown import write_cluster_files
-from md_generator.log.writers.incident_writer import write_incidents
 from md_generator.log.writers.summary_writer import write_levels_md, write_timeline_md, write_top_errors_md
 
 
@@ -76,9 +75,6 @@ def render_all(
 
     if cfg.output.split_by_level:
         write_raw_by_level(root, records)
-
-    if cfg.output.generate_incidents:
-        write_incidents(root, records)
 
     if cluster_labels is not None and cfg.output.generate_clusters and len(cluster_labels) == len(records):
         write_cluster_files(root, records, cluster_labels)

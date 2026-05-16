@@ -1,0 +1,5 @@
+# Classic Logback / Log4j2 text pattern:
+# %d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger - %msg
+parser:
+  preset: logback
+  line_regex: "^(?P<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(?:[.,]\\d{1,9})?)\\s+\\[(?P<thread>[^\\]]+)\\]\\s+(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\s+(?P<logger>\\S+)\\s+-\\s+(?P<message>.*)$"

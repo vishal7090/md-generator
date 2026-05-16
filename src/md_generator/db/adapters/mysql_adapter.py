@@ -78,6 +78,20 @@ class MysqlAdapter(SqlAlchemyAdapter):
         with self._engine.connect() as conn:
             conn.execute(text("SELECT 1"))
 
+    def list_schemas(self) -> list[str]:
+        q = text(
+            """
+            SELECT schema_name FROM information_schema.schemata
+            WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+            ORDER BY schema_name
+            """
+        )
+        try:
+            with self._engine.connect() as conn:
+                return [str(r[0]) for r in conn.execute(q)]
+        except Exception:
+            return []
+
     def get_tables(self) -> list[TableInfo]:
         insp = self._inspector()
         with self._engine.connect() as c:

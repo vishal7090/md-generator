@@ -14,6 +14,8 @@ from starlette.background import BackgroundTask
 
 from md_generator.db.api.schemas import DbToMdRunBody
 from md_generator.db.api.settings import DbApiSettings, cors_list, sqlite_path_resolved
+from md_generator.db.adapters.access_odbc import is_access_filename
+from md_generator.db.api.access_upload import parse_access_upload_config_json
 from md_generator.db.api.sqlite_upload import parse_sqlite_upload_config_json
 from md_generator.db.core.job_manager import JobManager
 from md_generator.db.core.util import is_sqlite_database_bytes, sqlite_uri_for_path
@@ -132,6 +134,86 @@ async def db_job_sqlite_upload(
     cfg_template = opts.to_run_config("sqlite:///placeholder")
     try:
         rec = jobs.create_sqlite_file_job(data, cfg_template)
+        jobs.run_job_thread(rec.job_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"job_id": rec.job_id}
+
+
+@app.post("/db-to-md/run/access")
+async def db_run_access_upload(
+    request: Request,
+    file: UploadFile = File(..., description="Microsoft Access .mdb or .accdb"),
+    config: str | None = Form(None, description="Optional JSON export options"),
+) -> Response:
+    import tempfile
+
+    settings: DbApiSettings = request.app.state.settings
+    max_upload = max(1, settings.max_access_upload_mb) * 1024 * 1024
+    data = await file.read()
+    if len(data) > max_upload:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Access upload exceeds DB_TO_MD_MAX_ACCESS_UPLOAD_MB ({settings.max_access_upload_mb})",
+        )
+    fname = file.filename or "upload.accdb"
+    if not is_access_filename(fname):
+        raise HTTPException(status_code=400, detail="File must be .mdb or .accdb")
+    try:
+        opts = parse_access_upload_config_json(config)
+    except (ValueError, ValidationError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            ext = Path(fname).suffix.lower() or ".accdb"
+            dbp = Path(td) / f"upload{ext}"
+            dbp.write_bytes(data)
+            from md_generator.db.adapters.access_odbc import access_sqlalchemy_uri
+
+            cfg = opts.to_run_config(access_sqlalchemy_uri(dbp))
+            zip_data = build_markdown_zip_bytes(cfg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    max_b = settings.max_sync_zip_mb * 1024 * 1024
+    if len(zip_data) > max_b:
+        raise HTTPException(
+            status_code=413,
+            detail=f"ZIP exceeds DB_TO_MD_MAX_SYNC_ZIP_MB ({settings.max_sync_zip_mb}); use POST /db-to-md/job/access",
+        )
+    return Response(
+        content=zip_data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="db-metadata.zip"'},
+    )
+
+
+@app.post("/db-to-md/job/access")
+async def db_job_access_upload(
+    request: Request,
+    file: UploadFile = File(..., description="Microsoft Access .mdb or .accdb"),
+    config: str | None = Form(None, description="Optional JSON export options"),
+) -> dict[str, str]:
+    settings: DbApiSettings = request.app.state.settings
+    jobs: JobManager = request.app.state.jobs
+    max_upload = max(1, settings.max_access_upload_mb) * 1024 * 1024
+    data = await file.read()
+    if len(data) > max_upload:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Access upload exceeds DB_TO_MD_MAX_ACCESS_UPLOAD_MB ({settings.max_access_upload_mb})",
+        )
+    fname = file.filename or "upload.accdb"
+    if not is_access_filename(fname):
+        raise HTTPException(status_code=400, detail="File must be .mdb or .accdb")
+    try:
+        opts = parse_access_upload_config_json(config)
+    except (ValueError, ValidationError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    cfg_template = opts.to_run_config("access+pyodbc:///placeholder")
+    try:
+        rec = jobs.create_access_file_job(data, fname, cfg_template)
         jobs.run_job_thread(rec.job_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

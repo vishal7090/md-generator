@@ -4,11 +4,13 @@ from typing import Any
 
 from sqlalchemy.engine.url import make_url
 
+from md_generator.db.adapters.access_adapter import AccessAdapter
 from md_generator.db.adapters.mongo_adapter import MongoAdapter
 from md_generator.db.adapters.mysql_adapter import MysqlAdapter
 from md_generator.db.adapters.oracle_adapter import OracleAdapter
 from md_generator.db.adapters.postgres_adapter import PostgresAdapter
 from md_generator.db.adapters.sqlite_adapter import SqliteAdapter
+from md_generator.db.adapters.sqlserver_adapter import SqlServerAdapter
 from md_generator.db.core.base_adapter import BaseAdapter
 
 
@@ -43,4 +45,12 @@ def create_adapter(
         if sch.lower() == "public":
             sch = "main"
         return SqliteAdapter(uri, sch, lim)
+    if t in ("mssql", "sqlserver", "microsoft_sql_server"):
+        sch = (schema or "dbo").strip()
+        return SqlServerAdapter(uri, sch, lim)
+    if t in ("access",):
+        sch = (schema or "main").strip()
+        if sch.lower() == "public":
+            sch = "main"
+        return AccessAdapter(uri, sch, lim)
     raise ValueError(f"Unsupported database type: {db_type!r}")

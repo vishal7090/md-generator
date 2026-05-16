@@ -6,14 +6,18 @@ from pathlib import Path
 from typing import Callable
 
 from md_generator.db.adapters.factory import create_adapter
+from md_generator.db.core.export_manifest import ExportManifestBuilder
+from md_generator.db.core.link_graph import LinkGraph
 from md_generator.db.core.markdown_writer import (
     format_cluster_markdown,
+    format_dependencies_markdown,
     format_empty_feature_section,
     format_mongo_collection_markdown,
     format_package_markdown,
     format_partition_markdown,
     format_routine_markdown,
     format_sequence_markdown,
+    format_synonym_markdown,
     format_table_markdown,
     format_trigger_markdown,
     format_view_markdown,
@@ -120,6 +124,14 @@ def extract_to_markdown(
     erd_note: str | None = None
     erd_engine: str | None = None
     bundle_paths_written: list[str] = []
+    manifest = ExportManifestBuilder() if cfg.write_manifest else None
+    links = LinkGraph() if cfg.markdown_cross_links else None
+
+    def notify_file(p: Path) -> None:
+        if manifest is not None:
+            manifest.add_file(p, root)
+        if on_file:
+            on_file(p)
 
     try:
         if adapter.db_type == "mongo":
@@ -178,12 +190,27 @@ def extract_to_markdown(
             tables = tables[:max_t]
             tables_sorted = sorted(tables, key=lambda t: (t.schema, t.name))
             nt = max(len(tables_sorted), 1)
+            if links is not None:
+                for t in tables_sorted:
+                    links.register(
+                        "table",
+                        t.schema,
+                        t.name,
+                        links.table_rel_path(t.schema, t.name),
+                    )
 
             def one_table(tbl: TableInfo) -> tuple[str, str, tuple, TableDetail]:
                 detail = adapter.get_table_detail(tbl)
                 idxs = tuple(adapter.get_indexes(tbl))
                 key = f"{tbl.schema}.{tbl.name}" if tbl.schema else tbl.name
-                md = format_table_markdown(detail, idxs)
+                related: list[tuple[str, str]] = []
+                if links is not None:
+                    rel = links.table_rel_path(tbl.schema, tbl.name)
+                    for fk in detail.foreign_keys:
+                        related.extend(
+                            links.related_links_for_fk(rel, fk.referred_schema, fk.referred_table)
+                        )
+                md = format_table_markdown(detail, idxs, related=related or None)
                 return key, md, idxs, detail
 
             table_parts: list[tuple[str, str]] = []
@@ -202,8 +229,9 @@ def extract_to_markdown(
                         fname = slugify_segment(f"{t.schema}_{t.name}" if t.schema else t.name) + ".md"
                         p = root / "tables" / fname
                         write_text(p, md)
-                        if on_file:
-                            on_file(p)
+                        notify_file(p)
+                    if manifest is not None:
+                        manifest.bump("tables")
                     done += 1
                     _emit(on_progress, int(5 + 40 * done / nt), f"tables/{sort_key}")
             if cfg.split_files:
@@ -496,15 +524,50 @@ def extract_to_markdown(
                 acc.append((title, body))
                 if cfg.split_files:
                     path = write_simple("oracle/clusters", title, body)
-                    if on_file:
-                        on_file(path)
+                    notify_file(path)
             if cfg.split_files:
                 if cfg.write_combined_feature_markdown and acc:
-                    _flush_combined(root, "oracle/clusters.md", acc, on_file=on_file)
+                    _flush_combined(root, "oracle/clusters.md", acc, on_file=notify_file)
                     bundle_paths_written.append("oracle/clusters.md")
             elif acc:
-                _flush_combined(root, "oracle/clusters.md", acc, on_file=on_file)
+                _flush_combined(root, "oracle/clusters.md", acc, on_file=notify_file)
                 bundle_paths_written.append("oracle/clusters.md")
+
+        if "synonyms" in feats:
+            syns = adapter.get_synonyms()
+            sparts: list[tuple[str, str]] = []
+            for s in syns:
+                body = format_synonym_markdown(s)
+                title = f"{s.schema}.{s.name}"
+                sparts.append((title, body))
+                if cfg.split_files:
+                    p = write_simple("synonyms", title, body)
+                    notify_file(p)
+            if manifest is not None:
+                manifest.bump("synonyms", len(syns))
+            scope = _scope_label(cfg)
+            if cfg.split_files and not syns:
+                _write_empty_feature_dir(
+                    root, "synonyms", "Synonyms", scope, split_files=True,
+                    combined_filename="synonyms.md", on_file=notify_file,
+                )
+            elif cfg.split_files and cfg.write_combined_feature_markdown and sparts:
+                _flush_combined(root, "synonyms.md", sparts, on_file=notify_file)
+                bundle_paths_written.append("synonyms.md")
+            elif not cfg.split_files and sparts:
+                _flush_combined(root, "synonyms.md", sparts, on_file=notify_file)
+                bundle_paths_written.append("synonyms.md")
+
+        if "dependencies" in feats:
+            edges = adapter.get_dependencies()
+            if edges:
+                body = format_dependencies_markdown(edges)
+                p = root / "dependencies" / "lineage.md"
+                write_text(p, body)
+                notify_file(p)
+                if manifest is not None:
+                    manifest.dependency_edges = len(edges)
+                    manifest.bump("dependencies", 1)
 
     finally:
         adapter.close()
@@ -529,9 +592,11 @@ def extract_to_markdown(
             combined_readme_paths=merge_paths,
         )
         readme = write_run_readme(root, meta)
-        if on_file:
-            on_file(readme)
+        notify_file(readme)
         _emit(on_progress, 98, "README.md")
+        if manifest is not None:
+            manifest.combined_bundles = list(bundle_paths_written)
+            manifest.write(root, cfg, meta)
 
     _emit(on_progress, 100, "completed")
     return root

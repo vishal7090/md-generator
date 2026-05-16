@@ -13,6 +13,7 @@ from md_generator.archive.api.jobs import JobStore
 from md_generator.archive.api.mcp_setup import build_mcp_stack
 from md_generator.archive.api.query_options import convert_options_from_query
 from md_generator.archive.api.settings import ApiSettings, cors_list
+from md_generator.archive.extractors import archive_filename_suffix, is_supported_archive_filename
 from md_generator.archive.options import DEFAULT_IMAGE_TO_MD_ENGINES
 
 _mcp, _mcp_http = build_mcp_stack(mount_under_fastapi=True)
@@ -83,8 +84,11 @@ async def convert_sync(
     image_to_md_title: str = "",
 ) -> Response:
     settings: ApiSettings = request.app.state.settings
-    if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise HTTPException(400, detail="Expected a .zip file upload (multipart field 'file')")
+    if not file.filename or not is_supported_archive_filename(file.filename):
+        raise HTTPException(
+            400,
+            detail="Expected a supported archive upload (.zip, .tar, .tar.gz, .tgz, .tar.bz2, .7z, .rar)",
+        )
     max_u = settings.max_upload_mb * 1024 * 1024
     max_sync = settings.max_sync_upload_mb * 1024 * 1024
     body = await _read_upload_limited(file, max_u)
@@ -109,7 +113,8 @@ async def convert_sync(
     )
     import tempfile
 
-    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+    suffix = archive_filename_suffix(file.filename or "upload.zip")
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
         tf.write(body)
         tmp_in = Path(tf.name)
     try:
@@ -141,8 +146,11 @@ async def convert_jobs(
 ) -> dict:
     settings: ApiSettings = request.app.state.settings
     store: JobStore = request.app.state.job_store
-    if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise HTTPException(400, detail="Expected a .zip file upload (multipart field 'file')")
+    if not file.filename or not is_supported_archive_filename(file.filename):
+        raise HTTPException(
+            400,
+            detail="Expected a supported archive upload (.zip, .tar, .tar.gz, .tgz, .tar.bz2, .7z, .rar)",
+        )
     max_u = settings.max_upload_mb * 1024 * 1024
     body = await _read_upload_limited(file, max_u)
     rr = _merge_repo_root(settings, repo_root)
@@ -159,8 +167,9 @@ async def convert_jobs(
         image_to_md_strategy=image_to_md_strategy,
         image_to_md_title=image_to_md_title,
     )
+    suffix = archive_filename_suffix(file.filename or "upload.zip")
     job = store.create_job()
-    inp = job.workspace / "upload.zip"
+    inp = job.workspace / f"upload{suffix}"
     inp.write_bytes(body)
 
     def work() -> None:

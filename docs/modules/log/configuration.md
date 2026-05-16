@@ -1,11 +1,7 @@
-# Log Analysis Configuration
+# Log configuration
 
-Configuration is supplied through CLI flags, API request fields, packaged YAML where the module provides it, and environment variables for service runtime concerns.
+Use `md-log --config log.yaml` or `mdengine log-to-md --input path --output out`.
 
-For this module, begin with:
+Key sections: `input`, `parser`, `normalization`, `incidents`, `chunking`, `embeddings`, `correlation`, `knowledge_graph`, `timeline`, `intelligence`, `output`, `execution`.
 
-```bash
-md-log --help
-```
-
-Source code lives in `src/md_generator/log`.
+Packaged defaults: `src/md_generator/log/config/default.yaml`.

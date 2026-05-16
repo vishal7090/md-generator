@@ -25,6 +25,38 @@ def build_mcp_stack(*, mount_under_fastapi: bool = False) -> tuple[FastMCP, obje
         return "ok"
 
     @mcp.tool()
+    def log_list_presets() -> str:
+        from md_generator.log.config.preset_loader import list_preset_names
+
+        return json.dumps({"presets": list_preset_names()}, indent=2)
+
+    @mcp.tool()
+    def log_parser_from_regex(line_regex: str, sample_text: str = "") -> str:
+        """Build parser config JSON using a custom line_regex; optionally auto-score against sample."""
+        from md_generator.log.parser.regex_parser import try_structured_match
+        from md_generator.log.utils.regex import compile_optional
+
+        pat = compile_optional(line_regex)
+        if pat is None:
+            return json.dumps({"error": "invalid regex"})
+        matches = 0
+        if sample_text.strip():
+            for line in sample_text.splitlines()[:200]:
+                if line.strip() and try_structured_match(line, pat):
+                    matches += 1
+        return json.dumps(
+            {
+                "parser": {
+                    "preset": "generic",
+                    "line_regex": line_regex,
+                    "auto_detect": False,
+                },
+                "sample_matches": matches,
+            },
+            indent=2,
+        )
+
+    @mcp.tool()
     def log_run_sync_zip_base64(config_json: str) -> str:
         body = LogToMdRunBody.model_validate(json.loads(config_json))
         cfg = body.to_log_run_config()

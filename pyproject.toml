@@ -47,6 +47,7 @@ image-ocr = [
 ]
 text = ["xmltodict>=0.13.0", "lxml>=5.0.0"]
 archive = ["Pillow>=10.0.0", "pytesseract>=0.3.10"]
+archive-formats = ["py7zr>=0.21.0", "patoolib>=2.0.0"]
 url = [
   "httpx>=0.27.0",
   "beautifulsoup4>=4.12.0",
@@ -97,6 +98,7 @@ db = [
   "pyyaml>=6.0.0",
   "psycopg2-binary>=2.9.9",
   "pymysql>=1.1.0",
+  "pyodbc>=5.0.0",
   "oracledb>=2.0.0",
   "pymongo>=4.6.0",
   "mermaid-py>=0.8.0",
@@ -150,6 +152,22 @@ log-semantic = [
 ]
 log-pretty = [
   "loguru>=0.7.0",
+]
+log-otel-proto = [
+  "opentelemetry-proto>=1.27.0",
+  "protobuf>=4.25.0",
+]
+log-export-parquet = [
+  "pyarrow>=14.0.0",
+]
+log-stream-kafka = [
+  "kafka-python>=2.0.2",
+]
+log-stream-redis = [
+  "redis>=5.0.0",
+]
+log-stream-ws = [
+  "websockets>=12.0",
 ]
 api = [
   "fastapi>=0.115.0",
@@ -260,6 +278,7 @@ md-codeflow-mcp = "md_generator.codeflow.api.mcp_server:main"
 md-log = "md_generator.log.cli.main:main"
 md-log-api = "md_generator.log.api.run:main"
 md-log-mcp = "md_generator.log.api.mcp_server:main"
+md-otel = "md_generator.otel.cli.main:main"
 mdengine = "md_generator.engine_cli:main"
 
 [tool.setuptools.packages.find]

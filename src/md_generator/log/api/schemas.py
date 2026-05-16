@@ -9,6 +9,7 @@ from md_generator.log.config.schemas import LogRunConfig
 
 class InputSectionModel(BaseModel):
     paths: list[str] = Field(default_factory=list)
+    otel_path: str | None = None
 
 
 class ParserSectionModel(BaseModel):
@@ -16,6 +17,7 @@ class ParserSectionModel(BaseModel):
     line_regex: str | None = None
     fuzzy_timestamp: bool = False
     auto_detect: bool = False
+    preset_dirs: list[str] = Field(default_factory=list)
 
 
 class NormalizationSectionModel(BaseModel):
@@ -43,6 +45,7 @@ class OutputSectionModel(BaseModel):
     generate_incidents: bool = True
     generate_clusters: bool = False
     generate_chunks: bool = False
+    frontmatter: bool = False
 
 
 class ChunkSectionModel(BaseModel):
@@ -57,6 +60,20 @@ class ExecutionSectionModel(BaseModel):
     encoding_fallbacks: list[str] = Field(
         default_factory=lambda: ["utf-8", "utf-8-sig", "latin-1", "cp1252"],
     )
+    batch_records: int = Field(default=10_000, ge=100)
+    use_runtime: bool = False
+    distributed: bool = False
+
+
+class IncrementalSectionModel(BaseModel):
+    enabled: bool = False
+    checkpoint_path: str | None = None
+
+
+class StreamingSectionModel(BaseModel):
+    enabled: bool = False
+    source: str = "tail"
+    batch_size: int = Field(default=100, ge=1)
 
 
 class PluginsSectionModel(BaseModel):
@@ -73,61 +90,15 @@ class LogToMdRunBody(BaseModel):
     chunk: ChunkSectionModel = Field(default_factory=ChunkSectionModel)
     execution: ExecutionSectionModel = Field(default_factory=ExecutionSectionModel)
     plugins: PluginsSectionModel = Field(default_factory=PluginsSectionModel)
+    incremental: IncrementalSectionModel = Field(default_factory=IncrementalSectionModel)
+    streaming: StreamingSectionModel = Field(default_factory=StreamingSectionModel)
+
+    model_config = {"extra": "allow"}
 
     def to_log_run_config(self) -> LogRunConfig:
-        from md_generator.log.config.schemas import (
-            AggregationSection,
-            ChunkSection,
-            ClusteringSection,
-            ExecutionSection,
-            InputSection,
-            NormalizationSection,
-            OutputSection,
-            ParserSection,
-            PluginsSection,
-        )
+        from md_generator.log.core.run_config import jsonable_to_log_config
 
-        return LogRunConfig(
-            input=InputSection(paths=list(self.input.paths)),
-            parser=ParserSection(
-                preset=self.parser.preset,
-                line_regex=self.parser.line_regex,
-                fuzzy_timestamp=self.parser.fuzzy_timestamp,
-                auto_detect=self.parser.auto_detect,
-            ),
-            normalization=NormalizationSection(
-                redact_pii=self.normalization.redact_pii,
-                normalize_numbers=self.normalization.normalize_numbers,
-                normalize_uuid=self.normalization.normalize_uuid,
-                normalize_paths=self.normalization.normalize_paths,
-            ),
-            aggregation=AggregationSection(timeline=self.aggregation.timeline),
-            clustering=ClusteringSection(
-                enabled=self.clustering.enabled,
-                algorithm=self.clustering.algorithm,
-                n_clusters=self.clustering.n_clusters,
-                random_state=self.clustering.random_state,
-                max_features=self.clustering.max_features,
-            ),
-            output=OutputSection(
-                path=self.output.path,
-                split_by_level=self.output.split_by_level,
-                generate_incidents=self.output.generate_incidents,
-                generate_clusters=self.output.generate_clusters,
-                generate_chunks=self.output.generate_chunks,
-            ),
-            chunk=ChunkSection(
-                enabled=self.chunk.enabled,
-                lines_per_chunk=self.chunk.lines_per_chunk,
-                records_per_md_chunk=self.chunk.records_per_md_chunk,
-            ),
-            execution=ExecutionSection(
-                workers=self.execution.workers,
-                max_lines_per_file=self.execution.max_lines_per_file,
-                encoding_fallbacks=list(self.execution.encoding_fallbacks),
-            ),
-            plugins=PluginsSection(enrichers=list(self.plugins.enrichers)),
-        ).normalized()
+        return jsonable_to_log_config(self.model_dump()).normalized()
 
 
 def parse_log_upload_config_json(raw: str | None) -> LogToMdRunBody:

@@ -10,7 +10,7 @@ from md_generator.db.core.run_config import ErdConfig, RunConfig
 
 
 class DatabaseSection(BaseModel):
-    type: str = Field(..., description="postgres | mysql | oracle | mongo | sqlite")
+    type: str = Field(..., description="postgres | mysql | mssql | oracle | mongo | sqlite | access")
     uri: str
     schema: str | None = None
     database: str | None = None
@@ -21,6 +21,8 @@ class OutputSection(BaseModel):
     split_files: bool = True
     write_combined_feature_markdown: bool = False
     readme_feature_merge: Literal["none", "inline", "toc"] = "none"
+    write_manifest: bool = True
+    markdown_cross_links: bool = True
 
 
 class FeaturesSection(BaseModel):
@@ -74,6 +76,8 @@ class DbToMdRunBody(BaseModel):
             split_files=self.output.split_files,
             write_combined_feature_markdown=write_combined,
             readme_feature_merge=merge,
+            write_manifest=self.output.write_manifest,
+            markdown_cross_links=self.output.markdown_cross_links,
             include=inc,
             exclude=frozenset(self.features.exclude),
             workers=self.execution.workers,

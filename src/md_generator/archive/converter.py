@@ -4,13 +4,16 @@ import argparse
 import sys
 from pathlib import Path
 
-from md_generator.archive.convert_impl import convert_zip
+from md_generator.archive.convert_impl import convert_archive
+from md_generator.archive.extractors import detect_archive_format
 from md_generator.archive.options import DEFAULT_IMAGE_TO_MD_ENGINES, ConvertOptions
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Convert .zip archive to Markdown + assets (artifact layout).")
-    p.add_argument("input", type=Path, help="Input .zip path")
+    p = argparse.ArgumentParser(
+        description="Convert archive (.zip, .tar, .tar.gz, .tgz, .tar.bz2, .7z, .rar) to Markdown + assets.",
+    )
+    p.add_argument("input", type=Path, help="Input archive path")
     p.add_argument("output", type=Path, help="Output directory (writes document.md and assets/)")
     p.add_argument("-v", "--verbose", action="store_true")
     p.add_argument("--no-office", action="store_true", help="Skip PDF/DOCX/PPTX/XLSX conversion")
@@ -67,14 +70,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--no-expand-nested-zips",
         action="store_true",
-        help="Do not recursively extract .zip members under assets/files/",
+        help="Do not recursively extract nested archives under assets/files/",
     )
     p.add_argument(
         "--max-nested-zip-depth",
         type=int,
         default=16,
         metavar="N",
-        help="Max nesting depth for inner ZIPs (each *_unzipped/ segment counts as one level; default: 16)",
+        help="Max nesting depth for inner archives (each *_unzipped/ segment counts as one level; default: 16)",
     )
     return p
 
@@ -102,15 +105,18 @@ def main(argv: list[str] | None = None) -> int:
     ns = parser.parse_args(argv)
     opts = _options_from_args(ns)
     inp = ns.input
-    if inp.suffix.lower() != ".zip":
-        print("Input must be a .zip file", file=sys.stderr)
+    if detect_archive_format(inp) is None:
+        print(
+            "Input must be a supported archive (.zip, .tar, .tar.gz, .tgz, .tar.bz2, .7z, .rar)",
+            file=sys.stderr,
+        )
         return 2
     out = ns.output
     if out.exists() and not out.is_dir():
         print("Output must be a directory", file=sys.stderr)
         return 2
     try:
-        convert_zip(inp, out, opts)
+        convert_archive(inp, out, opts)
     except Exception as e:
         print(f"Conversion failed: {e}", file=sys.stderr)
         if opts.verbose:

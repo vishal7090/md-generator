@@ -4,18 +4,18 @@ import io
 import zipfile
 from pathlib import Path
 
-from md_generator.archive.convert_impl import convert_zip
+from md_generator.archive.convert_impl import convert_archive
 from md_generator.archive.options import ConvertOptions
 
 
-def build_artifact_zip_bytes(zip_path: Path, options: ConvertOptions) -> bytes:
+def build_artifact_zip_bytes(archive_path: Path, options: ConvertOptions) -> bytes:
     """Run conversion into a temp artifact dir; return ZIP bytes (document.md + assets/)."""
     import tempfile
 
     buf = io.BytesIO()
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "artifact"
-        convert_zip(zip_path, out, options)
+        convert_archive(archive_path, out, options)
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             doc = out / "document.md"
             if doc.is_file():

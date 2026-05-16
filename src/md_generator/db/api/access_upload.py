@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+from md_generator.db.core.models import FEATURES
+from md_generator.db.core.run_config import ErdConfig, RunConfig
+
+
+class AccessUploadOutputSection(BaseModel):
+    path: str = "./docs"
+    split_files: bool = True
+    write_combined_feature_markdown: bool = False
+    readme_feature_merge: Literal["none", "inline", "toc"] = "none"
+    write_manifest: bool = True
+    markdown_cross_links: bool = True
+
+
+class AccessUploadFeaturesSection(BaseModel):
+    include: list[str] | None = None
+    exclude: list[str] = Field(default_factory=list)
+
+
+class AccessUploadExecutionSection(BaseModel):
+    workers: int = Field(default=4, ge=1, le=32)
+
+
+class AccessUploadErdSection(BaseModel):
+    max_tables: int = Field(default=100, ge=1, le=100_000)
+    scope: Literal["full", "per_schema", "per_table"] = Field(default="full")
+
+
+class AccessUploadJsonBody(BaseModel):
+    schema: str | None = Field(default="main", description="Access catalog label (default main)")
+    output: AccessUploadOutputSection = Field(default_factory=AccessUploadOutputSection)
+    features: AccessUploadFeaturesSection = Field(default_factory=AccessUploadFeaturesSection)
+    execution: AccessUploadExecutionSection = Field(default_factory=AccessUploadExecutionSection)
+    limits: dict[str, Any] = Field(default_factory=dict)
+    erd: AccessUploadErdSection = Field(default_factory=AccessUploadErdSection)
+
+    @model_validator(mode="after")
+    def check_features(self) -> AccessUploadJsonBody:
+        if self.features.include:
+            bad = set(self.features.include) - FEATURES
+            if bad:
+                raise ValueError(f"Unknown features in include: {sorted(bad)}")
+        bad_ex = set(self.features.exclude) - FEATURES
+        if bad_ex:
+            raise ValueError(f"Unknown features in exclude: {sorted(bad_ex)}")
+        return self
+
+    def to_run_config(self, access_uri: str) -> RunConfig:
+        sch = self.schema
+        if sch is None or str(sch).strip() == "" or str(sch).lower() == "public":
+            sch = "main"
+        inc = frozenset(self.features.include) if self.features.include else frozenset(FEATURES)
+        merge = self.output.readme_feature_merge
+        write_combined = self.output.write_combined_feature_markdown
+        if merge != "none" and self.output.split_files:
+            write_combined = True
+        return RunConfig(
+            db_type="access",
+            uri=access_uri,
+            schema=sch,
+            database=None,
+            output_path=Path(self.output.path),
+            split_files=self.output.split_files,
+            write_combined_feature_markdown=write_combined,
+            readme_feature_merge=merge,
+            write_manifest=self.output.write_manifest,
+            markdown_cross_links=self.output.markdown_cross_links,
+            include=inc,
+            exclude=frozenset(self.features.exclude),
+            workers=self.execution.workers,
+            limits=dict(self.limits),
+            erd=ErdConfig(max_tables=self.erd.max_tables, scope=self.erd.scope).normalized(),
+        )
+
+
+def parse_access_upload_config_json(raw: str | None) -> AccessUploadJsonBody:
+    if raw is None or not str(raw).strip():
+        return AccessUploadJsonBody()
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("config must be a JSON object")
+    return AccessUploadJsonBody.model_validate(data)

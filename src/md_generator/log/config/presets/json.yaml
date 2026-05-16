@@ -1,0 +1,4 @@
+# One JSON object per line (JSONL). Uses json preset in multiline_parser.
+parser:
+  preset: json
+  line_regex: null

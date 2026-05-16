@@ -57,6 +57,8 @@ cover/
 
 # Django stuff:
 *.log
+!log-to-md/tests/fixtures/
+!log-to-md/tests/fixtures/**
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
