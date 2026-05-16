@@ -4,11 +4,13 @@ import re
 import time
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from md_generator.log.config.schemas import LogRunConfig
 from md_generator.log.parser.level_detector import message_without_level, scan_level
 from md_generator.log.parser.logger_detector import refine_logger
 from md_generator.log.parser.models import LogRecord, ParseResult
+from md_generator.log.parser.json_line_parser import try_parse_json_log_line
 from md_generator.log.parser.regex_parser import compiled_pattern, try_structured_match
 from md_generator.log.parser.stacktrace_parser import is_stacktrace_line
 from md_generator.log.parser.timestamp_parser import parse_log_timestamp
@@ -70,6 +72,7 @@ def parse_file_lines(
     t0 = time.perf_counter()
     pattern = compiled_pattern(cfg.parser.line_regex)
     fuzzy = bool(cfg.parser.fuzzy_timestamp)
+    json_lines = (cfg.parser.preset or "").lower() == "json"
 
     records: list[LogRecord] = []
     total_lines = 0
@@ -94,6 +97,8 @@ def parse_file_lines(
             raw_lines=list(current["raw_lines"]),
             fuzzy_ts=fuzzy,
         )
+        if current.get("metadata"):
+            rec.metadata.update(dict(current["metadata"]))
         records.append(rec)
         current = None
 
@@ -109,7 +114,9 @@ def parse_file_lines(
                 skipped += 1
             continue
 
-        structured = try_structured_match(line, pattern)
+        structured = try_structured_match(line, pattern) if pattern else None
+        if json_lines and structured is None:
+            structured = try_parse_json_log_line(line)
         is_new = structured is not None
 
         if not is_new and current is None:
@@ -125,6 +132,9 @@ def parse_file_lines(
         if is_new and structured is not None:
             flush()
             msg = structured.get("message") or ""
+            metadata: dict[str, Any] = {}
+            if isinstance(structured.get("_json"), dict):
+                metadata["json"] = structured["_json"]
             current = {
                 "start_line": line_no,
                 "ts_raw": structured.get("timestamp") or None,
@@ -134,6 +144,7 @@ def parse_file_lines(
                 "message": msg,
                 "stack": None,
                 "raw_lines": [raw_line],
+                "metadata": metadata,
             }
             if current["level"] == "WARNING":
                 current["level"] = "WARN"

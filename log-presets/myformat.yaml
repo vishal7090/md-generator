@@ -1,0 +1,4 @@
+# Custom preset example — ISO date with bracketed level only
+parser:
+  preset: myformat
+  line_regex: "^(?P<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})\\s+\\[(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\]\\s+(?P<message>.*)$"

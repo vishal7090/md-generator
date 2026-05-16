@@ -5,7 +5,10 @@ from pathlib import Path
 from md_generator.log.incidents.incident_engine import build_incidents
 from md_generator.log.incidents.models import Incident
 from md_generator.log.parser.models import LogRecord
+from md_generator.log.config.schemas import LogRunConfig
+from md_generator.log.incidents.artifact_adapter import incident_to_artifact
 from md_generator.log.utils.io import write_text
+from md_generator.log.writers.frontmatter_writer import wrap_with_frontmatter
 
 
 def _format_ts(ts: object | None) -> str:
@@ -54,7 +57,11 @@ def write_incidents(root: Path, records: list[LogRecord], cfg: object) -> list[I
 
     assert isinstance(cfg, LogRunConfig)
     incidents = build_incidents(records, cfg)
+    use_fm = isinstance(cfg, LogRunConfig) and cfg.output.frontmatter
     for i, inc in enumerate(incidents[:500], start=1):
         body = render_incident_markdown(inc, index=i)
+        if use_fm:
+            art = incident_to_artifact(inc, index=i)
+            body = wrap_with_frontmatter(body, art.to_frontmatter_dict(), enabled=True)
         write_text(root / "incidents" / f"incident_{i:03d}.md", body)
     return incidents

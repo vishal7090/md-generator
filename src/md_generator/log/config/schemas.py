@@ -7,6 +7,7 @@ from pathlib import Path
 @dataclass
 class InputSection:
     paths: list[str] = field(default_factory=list)
+    otel_path: str | None = None
 
 
 @dataclass
@@ -15,6 +16,7 @@ class ParserSection:
     line_regex: str | None = None
     fuzzy_timestamp: bool = False
     auto_detect: bool = False
+    preset_dirs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -46,6 +48,7 @@ class OutputSection:
     generate_incidents: bool = True
     generate_clusters: bool = False
     generate_chunks: bool = False
+    frontmatter: bool = False
 
 
 @dataclass
@@ -62,6 +65,9 @@ class ExecutionSection:
     encoding_fallbacks: list[str] = field(
         default_factory=lambda: ["utf-8", "utf-8-sig", "latin-1", "cp1252"],
     )
+    batch_records: int = 10_000
+    use_runtime: bool = False
+    distributed: bool = False
 
 
 @dataclass
@@ -100,6 +106,7 @@ class EmbeddingsSection:
 class CorrelationSection:
     enabled: bool = False
     timeline_window_seconds: int = 300
+    cross_source: bool = False
 
 
 @dataclass
@@ -125,6 +132,66 @@ class SearchSection:
 
 
 @dataclass
+class IncrementalSection:
+    enabled: bool = False
+    checkpoint_path: str | None = None
+
+
+@dataclass
+class IngestionSection:
+    archive_cleanup: bool = True
+    use_archive_bridge: bool = True
+
+
+@dataclass
+class NoiseReductionSection:
+    enabled: bool = False
+    dedupe: bool = True
+    entropy_threshold: float = 0.15
+    min_message_length: int = 4
+
+
+@dataclass
+class StreamingSection:
+    enabled: bool = False
+    source: str = "tail"
+    batch_size: int = 100
+    kafka_brokers: str = "localhost:9092"
+    kafka_topic: str = "logs"
+    kafka_group: str = "md-log"
+    redis_url: str = "redis://localhost:6379"
+    redis_stream: str = "logs"
+    redis_group: str = "md-log"
+    websocket_url: str = "ws://localhost:8765"
+
+
+@dataclass
+class VisualizationSection:
+    enabled: bool = False
+
+
+@dataclass
+class DocumentationSection:
+    enabled: bool = False
+
+
+@dataclass
+class TopologySection:
+    enabled: bool = False
+
+
+@dataclass
+class LinkingSection:
+    enabled: bool = False
+
+
+@dataclass
+class GovernanceSection:
+    enabled: bool = False
+    classify_pii: bool = True
+
+
+@dataclass
 class LogRunConfig:
     input: InputSection = field(default_factory=InputSection)
     parser: ParserSection = field(default_factory=ParserSection)
@@ -143,12 +210,27 @@ class LogRunConfig:
     timeline: TimelineSection = field(default_factory=TimelineSection)
     intelligence: IntelligenceSection = field(default_factory=IntelligenceSection)
     search: SearchSection = field(default_factory=SearchSection)
+    incremental: IncrementalSection = field(default_factory=IncrementalSection)
+    ingestion: IngestionSection = field(default_factory=IngestionSection)
+    noise_reduction: NoiseReductionSection = field(default_factory=NoiseReductionSection)
+    streaming: StreamingSection = field(default_factory=StreamingSection)
+    visualization: VisualizationSection = field(default_factory=VisualizationSection)
+    documentation: DocumentationSection = field(default_factory=DocumentationSection)
+    topology: TopologySection = field(default_factory=TopologySection)
+    linking: LinkingSection = field(default_factory=LinkingSection)
+    governance: GovernanceSection = field(default_factory=GovernanceSection)
 
     def resolved_input_paths(self) -> list[Path]:
         return [Path(p).expanduser().resolve() for p in self.input.paths if str(p).strip()]
 
     def output_path(self) -> Path:
         return Path(self.output.path).expanduser().resolve()
+
+    def resolved_otel_path(self) -> Path | None:
+        p = self.input.otel_path
+        if not p or not str(p).strip():
+            return None
+        return Path(p).expanduser().resolve()
 
     def normalized(self) -> LogRunConfig:
         tl = (self.aggregation.timeline or "none").lower().strip()

@@ -12,19 +12,28 @@ from md_generator.log.config.schemas import (
     ChunkingSection,
     ClusteringSection,
     CorrelationSection,
+    DocumentationSection,
     EmbeddingsSection,
     ExecutionSection,
+    GovernanceSection,
     IncidentsSection,
+    IncrementalSection,
+    IngestionSection,
     InputSection,
     IntelligenceSection,
     KnowledgeGraphSection,
+    LinkingSection,
     LogRunConfig,
+    NoiseReductionSection,
     NormalizationSection,
     OutputSection,
     ParserSection,
     PluginsSection,
     SearchSection,
+    StreamingSection,
     TimelineSection,
+    TopologySection,
+    VisualizationSection,
 )
 
 
@@ -65,7 +74,7 @@ def jsonable_to_log_config(data: dict[str, Any]) -> LogRunConfig:
 
 def _config_from_raw(raw: dict[str, Any]) -> LogRunConfig:
     return LogRunConfig(
-        input=_section(raw, "input", InputSection, {"paths": []}),
+        input=_section(raw, "input", InputSection, {"paths": [], "otel_path": None}),
         parser=_section(
             raw,
             "parser",
@@ -75,6 +84,7 @@ def _config_from_raw(raw: dict[str, Any]) -> LogRunConfig:
                 "line_regex": None,
                 "fuzzy_timestamp": False,
                 "auto_detect": False,
+                "preset_dirs": [],
             },
         ),
         normalization=_section(
@@ -111,6 +121,7 @@ def _config_from_raw(raw: dict[str, Any]) -> LogRunConfig:
                 "generate_incidents": True,
                 "generate_clusters": False,
                 "generate_chunks": False,
+                "frontmatter": False,
             },
         ),
         chunk=_section(
@@ -127,6 +138,9 @@ def _config_from_raw(raw: dict[str, Any]) -> LogRunConfig:
                 "workers": 4,
                 "max_lines_per_file": None,
                 "encoding_fallbacks": ["utf-8", "utf-8-sig", "latin-1", "cp1252"],
+                "batch_records": 10_000,
+                "use_runtime": False,
+                "distributed": False,
             },
         ),
         plugins=_section(raw, "plugins", PluginsSection, {"enrichers": [], "parsers": [], "writers": [], "classifiers": []}),
@@ -157,7 +171,7 @@ def _config_from_raw(raw: dict[str, Any]) -> LogRunConfig:
             raw,
             "correlation",
             CorrelationSection,
-            {"enabled": False, "timeline_window_seconds": 300},
+            {"enabled": False, "timeline_window_seconds": 300, "cross_source": False},
         ),
         knowledge_graph=_section(
             raw,
@@ -173,21 +187,64 @@ def _config_from_raw(raw: dict[str, Any]) -> LogRunConfig:
         ),
         intelligence=_section(raw, "intelligence", IntelligenceSection, {"enabled": False}),
         search=_section(raw, "search", SearchSection, {"index_path": None}),
+        incremental=_section(
+            raw,
+            "incremental",
+            IncrementalSection,
+            {"enabled": False, "checkpoint_path": None},
+        ),
+        ingestion=_section(
+            raw,
+            "ingestion",
+            IngestionSection,
+            {"archive_cleanup": True, "use_archive_bridge": True},
+        ),
+        noise_reduction=_section(
+            raw,
+            "noise_reduction",
+            NoiseReductionSection,
+            {
+                "enabled": False,
+                "dedupe": True,
+                "entropy_threshold": 0.15,
+                "min_message_length": 4,
+            },
+        ),
+        streaming=_section(
+            raw,
+            "streaming",
+            StreamingSection,
+            {
+                "enabled": False,
+                "source": "tail",
+                "batch_size": 100,
+                "kafka_brokers": "localhost:9092",
+                "kafka_topic": "logs",
+                "kafka_group": "md-log",
+                "redis_url": "redis://localhost:6379",
+                "redis_stream": "logs",
+                "redis_group": "md-log",
+                "websocket_url": "ws://localhost:8765",
+            },
+        ),
+        visualization=_section(raw, "visualization", VisualizationSection, {"enabled": False}),
+        documentation=_section(raw, "documentation", DocumentationSection, {"enabled": False}),
+        topology=_section(raw, "topology", TopologySection, {"enabled": False}),
+        linking=_section(raw, "linking", LinkingSection, {"enabled": False}),
+        governance=_section(
+            raw,
+            "governance",
+            GovernanceSection,
+            {"enabled": False, "classify_pii": True},
+        ),
     )
 
 
-def load_preset(name: str) -> dict[str, Any]:
-    """Load YAML preset fragment (parser overrides)."""
-    import importlib.resources as ir
+def load_preset(name: str, preset_dirs: list[str] | None = None) -> dict[str, Any]:
+    """Load YAML preset fragment from user dirs or packaged presets."""
+    from md_generator.log.config.preset_loader import load_preset_by_name
 
-    pkg = "md_generator.log.config.presets"
-    fname = f"{name}.yaml"
-    try:
-        txt = ir.files(pkg).joinpath(fname).read_text(encoding="utf-8")
-    except (FileNotFoundError, OSError):
-        return {}
-    loaded = yaml.safe_load(txt) or {}
-    return loaded if isinstance(loaded, dict) else {}
+    return load_preset_by_name(name, preset_dirs)
 
 
 def load_run_config(path: Path | None, overrides: dict[str, Any] | None = None) -> LogRunConfig:
@@ -204,8 +261,10 @@ def load_run_config(path: Path | None, overrides: dict[str, Any] | None = None) 
             raw = {}
     if overrides:
         raw = _deep_merge(raw, overrides)
-    preset_name = str((raw.get("parser") or {}).get("preset") or "generic").strip() or "generic"
-    preset_data = load_preset(preset_name)
+    parser_raw = raw.get("parser") or {}
+    preset_name = str(parser_raw.get("preset") or "generic").strip() or "generic"
+    preset_dirs = list(parser_raw.get("preset_dirs") or [])
+    preset_data = load_preset(preset_name, preset_dirs or None)
     if preset_data:
-        raw = _deep_merge(preset_data, raw)
+        raw = _deep_merge(raw, preset_data)
     return _config_from_raw(raw).normalized()

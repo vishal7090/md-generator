@@ -159,6 +159,15 @@ log-otel-proto = [
 log-export-parquet = [
   "pyarrow>=14.0.0",
 ]
+log-stream-kafka = [
+  "kafka-python>=2.0.2",
+]
+log-stream-redis = [
+  "redis>=5.0.0",
+]
+log-stream-ws = [
+  "websockets>=12.0",
+]
 api = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
