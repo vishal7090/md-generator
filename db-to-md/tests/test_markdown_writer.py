@@ -45,7 +45,7 @@ def test_format_table_markdown_snapshot() -> None:
     )
     md = format_table_markdown(detail, indexes)
     assert "# Table: `public.users`" in md
-    assert "**Comment:** App users" in md
+    assert "**Description:** App users" in md
     assert "`id`" in md
     assert "users_email_key" in md
     assert "CREATE INDEX users_org_idx" in md

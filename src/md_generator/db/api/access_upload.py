@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -9,14 +10,7 @@ from md_generator.db.core.models import FEATURES
 from md_generator.db.core.run_config import ErdConfig, RunConfig
 
 
-class DatabaseSection(BaseModel):
-    type: str = Field(..., description="postgres | mysql | mssql | oracle | mongo | sqlite | access")
-    uri: str
-    schema: str | None = None
-    database: str | None = None
-
-
-class OutputSection(BaseModel):
+class AccessUploadOutputSection(BaseModel):
     path: str = "./docs"
     split_files: bool = True
     write_combined_feature_markdown: bool = False
@@ -25,33 +19,30 @@ class OutputSection(BaseModel):
     markdown_cross_links: bool = True
 
 
-class FeaturesSection(BaseModel):
+class AccessUploadFeaturesSection(BaseModel):
     include: list[str] | None = None
     exclude: list[str] = Field(default_factory=list)
 
 
-class ExecutionSection(BaseModel):
+class AccessUploadExecutionSection(BaseModel):
     workers: int = Field(default=4, ge=1, le=32)
 
 
-class ErdSection(BaseModel):
+class AccessUploadErdSection(BaseModel):
     max_tables: int = Field(default=100, ge=1, le=100_000)
-    scope: Literal["full", "per_schema", "per_table"] = Field(
-        default="full",
-        description="full | per_schema | per_table",
-    )
+    scope: Literal["full", "per_schema", "per_table"] = Field(default="full")
 
 
-class DbToMdRunBody(BaseModel):
-    database: DatabaseSection
-    output: OutputSection = Field(default_factory=OutputSection)
-    features: FeaturesSection = Field(default_factory=FeaturesSection)
-    execution: ExecutionSection = Field(default_factory=ExecutionSection)
+class AccessUploadJsonBody(BaseModel):
+    schema: str | None = Field(default="main", description="Access catalog label (default main)")
+    output: AccessUploadOutputSection = Field(default_factory=AccessUploadOutputSection)
+    features: AccessUploadFeaturesSection = Field(default_factory=AccessUploadFeaturesSection)
+    execution: AccessUploadExecutionSection = Field(default_factory=AccessUploadExecutionSection)
     limits: dict[str, Any] = Field(default_factory=dict)
-    erd: ErdSection = Field(default_factory=ErdSection)
+    erd: AccessUploadErdSection = Field(default_factory=AccessUploadErdSection)
 
     @model_validator(mode="after")
-    def check_features(self) -> DbToMdRunBody:
+    def check_features(self) -> AccessUploadJsonBody:
         if self.features.include:
             bad = set(self.features.include) - FEATURES
             if bad:
@@ -61,17 +52,20 @@ class DbToMdRunBody(BaseModel):
             raise ValueError(f"Unknown features in exclude: {sorted(bad_ex)}")
         return self
 
-    def to_run_config(self) -> RunConfig:
+    def to_run_config(self, access_uri: str) -> RunConfig:
+        sch = self.schema
+        if sch is None or str(sch).strip() == "" or str(sch).lower() == "public":
+            sch = "main"
         inc = frozenset(self.features.include) if self.features.include else frozenset(FEATURES)
         merge = self.output.readme_feature_merge
         write_combined = self.output.write_combined_feature_markdown
         if merge != "none" and self.output.split_files:
             write_combined = True
         return RunConfig(
-            db_type=self.database.type,
-            uri=self.database.uri,
-            schema=self.database.schema,
-            database=self.database.database,
+            db_type="access",
+            uri=access_uri,
+            schema=sch,
+            database=None,
             output_path=Path(self.output.path),
             split_files=self.output.split_files,
             write_combined_feature_markdown=write_combined,
@@ -84,3 +78,12 @@ class DbToMdRunBody(BaseModel):
             limits=dict(self.limits),
             erd=ErdConfig(max_tables=self.erd.max_tables, scope=self.erd.scope).normalized(),
         )
+
+
+def parse_access_upload_config_json(raw: str | None) -> AccessUploadJsonBody:
+    if raw is None or not str(raw).strip():
+        return AccessUploadJsonBody()
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("config must be a JSON object")
+    return AccessUploadJsonBody.model_validate(data)

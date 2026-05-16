@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from md_generator.db.core.cli_ops import run_list_schemas, run_test_connection
 from md_generator.db.core.extractor import extract_to_markdown
 from md_generator.db.core.job_manager import JobManager
 from md_generator.db.core.models import FEATURES
@@ -19,7 +20,12 @@ def _parse_csv(s: str | None) -> frozenset[str] | None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Export database metadata to Markdown.")
     p.add_argument("--config", type=Path, default=None, help="Path to YAML config")
-    p.add_argument("--type", dest="db_type", default=None, help="postgres|mysql|oracle|mongo|sqlite")
+    p.add_argument(
+        "--type",
+        dest="db_type",
+        default=None,
+        help="postgres|mysql|mssql|oracle|mongo|sqlite|access",
+    )
     p.add_argument("--uri", default=None)
     p.add_argument("--output", type=Path, default=None)
     p.add_argument("--include", default=None, help="Comma-separated feature list")
@@ -52,6 +58,22 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("none", "inline", "toc"),
         default=None,
         help="Append combined bundle docs to README: none | inline | toc",
+    )
+    p.add_argument(
+        "--test-connection",
+        action="store_true",
+        help="Validate database connectivity and exit (no export)",
+    )
+    p.add_argument(
+        "--list-schemas",
+        action="store_true",
+        help="Print schema names (or catalog labels) and exit",
+    )
+    p.add_argument(
+        "--output-format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format for --list-schemas",
     )
     return p
 
@@ -139,6 +161,11 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = load_run_config(cfg_path if cfg_path is not None else None, overrides if overrides else None)
     cfg = _apply_cli_overrides(cfg, ns)
+
+    if ns.test_connection:
+        return run_test_connection(cfg)
+    if ns.list_schemas:
+        return run_list_schemas(cfg, output_format=ns.output_format)
 
     if ns.async_job:
         jm = JobManager()

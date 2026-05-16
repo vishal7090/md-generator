@@ -105,19 +105,7 @@ class JobManager:
         base = self._root or Path.cwd() / "db-md-jobs"
         ws = (base / jid).resolve()
         ws.mkdir(parents=True, exist_ok=True)
-        now = time.time()
-        cfg_dump = json.dumps(_config_to_jsonable(cfg), sort_keys=True)
-        assert self._conn is not None
-        with self._lock:
-            self._conn.execute(
-                """
-                INSERT INTO jobs (job_id, status, progress, current, workspace, zip_path, error, created_at, updated_at, config_json)
-                VALUES (?, ?, 0, '', ?, NULL, NULL, ?, ?, ?)
-                """,
-                (jid, JobStatus.PENDING.value, str(ws), now, now, cfg_dump),
-            )
-            self._conn.commit()
-        return self.get(jid)  # type: ignore[return-value]
+        return self._insert_job_record(jid, ws, cfg)
 
     def create_sqlite_file_job(self, db_bytes: bytes, cfg_template: RunConfig) -> DbJobRecord:
         """Create a job workspace, persist ``db_bytes`` as ``upload.sqlite``, then register the job.
@@ -143,12 +131,52 @@ class JobManager:
             split_files=cfg_template.split_files,
             write_combined_feature_markdown=cfg_template.write_combined_feature_markdown,
             readme_feature_merge=cfg_template.readme_feature_merge,
+            write_manifest=cfg_template.write_manifest,
+            markdown_cross_links=cfg_template.markdown_cross_links,
             include=cfg_template.include,
             exclude=cfg_template.exclude,
             workers=cfg_template.workers,
             limits=dict(cfg_template.limits),
             erd=cfg_template.erd,
         )
+        return self._insert_job_record(jid, ws, cfg)
+
+    def create_access_file_job(
+        self, db_bytes: bytes, filename: str, cfg_template: RunConfig
+    ) -> DbJobRecord:
+        from md_generator.db.adapters.access_odbc import access_sqlalchemy_uri, is_access_filename
+
+        if not is_access_filename(filename):
+            raise ValueError("Access upload must be .mdb or .accdb")
+        jid = str(uuid.uuid4())
+        base = self._root or Path.cwd() / "db-md-jobs"
+        ws = (base / jid).resolve()
+        ws.mkdir(parents=True, exist_ok=True)
+        ext = Path(filename).suffix.lower()
+        db_path = ws / f"upload{ext}"
+        db_path.write_bytes(db_bytes)
+        uri = access_sqlalchemy_uri(db_path)
+        sch = cfg_template.schema if cfg_template.schema else "main"
+        cfg = RunConfig(
+            db_type="access",
+            uri=uri,
+            schema=sch,
+            database=cfg_template.database,
+            output_path=cfg_template.output_path,
+            split_files=cfg_template.split_files,
+            write_combined_feature_markdown=cfg_template.write_combined_feature_markdown,
+            readme_feature_merge=cfg_template.readme_feature_merge,
+            write_manifest=cfg_template.write_manifest,
+            markdown_cross_links=cfg_template.markdown_cross_links,
+            include=cfg_template.include,
+            exclude=cfg_template.exclude,
+            workers=cfg_template.workers,
+            limits=dict(cfg_template.limits),
+            erd=cfg_template.erd,
+        )
+        return self._insert_job_record(jid, ws, cfg)
+
+    def _insert_job_record(self, jid: str, ws: Path, cfg: RunConfig) -> DbJobRecord:
         now = time.time()
         cfg_dump = json.dumps(_config_to_jsonable(cfg), sort_keys=True)
         assert self._conn is not None
@@ -240,6 +268,8 @@ class JobManager:
             split_files=bool(data.get("split_files", True)),
             write_combined_feature_markdown=bool(data.get("write_combined_feature_markdown", False)),
             readme_feature_merge=str(data.get("readme_feature_merge", "none")),
+            write_manifest=bool(data.get("write_manifest", True)),
+            markdown_cross_links=bool(data.get("markdown_cross_links", True)),
             include=frozenset(data.get("include", [])),
             exclude=frozenset(data.get("exclude", [])),
             workers=int(data.get("workers", 4)),
@@ -309,6 +339,8 @@ def _config_to_jsonable(cfg: RunConfig) -> dict[str, Any]:
         "split_files": cfg.split_files,
         "write_combined_feature_markdown": cfg.write_combined_feature_markdown,
         "readme_feature_merge": cfg.readme_feature_merge,
+        "write_manifest": cfg.write_manifest,
+        "markdown_cross_links": cfg.markdown_cross_links,
         "include": sorted(cfg.include),
         "exclude": sorted(cfg.exclude),
         "workers": cfg.workers,

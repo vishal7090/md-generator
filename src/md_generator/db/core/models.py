@@ -23,6 +23,8 @@ FEATURES = frozenset(
         "triggers",
         "sequences",
         "partitions",
+        "synonyms",
+        "dependencies",
         "oracle_packages",
         "oracle_clusters",
         "mongodb_collections",
@@ -86,6 +88,25 @@ class RoutineInfo:
     name: str
     language: str | None
     definition: str | None
+    comment: str | None = None
+
+
+@dataclass(frozen=True)
+class SynonymInfo:
+    schema: str
+    name: str
+    base_object: str
+    comment: str | None = None
+
+
+@dataclass(frozen=True)
+class DependencyEdge:
+    referencing_schema: str
+    referencing_name: str
+    referencing_kind: str
+    referenced_schema: str
+    referenced_name: str
+    referenced_kind: str
 
 
 @dataclass(frozen=True)

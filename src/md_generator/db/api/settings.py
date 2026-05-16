@@ -17,6 +17,7 @@ class DbApiSettings(BaseSettings):
     cors_origins: str = "*"
     max_sync_zip_mb: int = 80
     max_sqlite_upload_mb: int = 256
+    max_access_upload_mb: int = 256
 
 
 def cors_list(settings: DbApiSettings) -> list[str]:

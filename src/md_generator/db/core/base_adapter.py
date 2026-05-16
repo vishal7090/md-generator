@@ -6,6 +6,7 @@ from typing import Any
 from md_generator.db.core.models import (
     ClusterInfo,
     ColumnInfo,
+    DependencyEdge,
     ForeignKeyInfo,
     IndexInfo,
     MongoCollectionInfo,
@@ -13,6 +14,7 @@ from md_generator.db.core.models import (
     PartitionInfo,
     RoutineInfo,
     SequenceInfo,
+    SynonymInfo,
     TableDetail,
     TableInfo,
     TriggerInfo,
@@ -67,6 +69,15 @@ class BaseAdapter(ABC):
         return []
 
     def get_collections(self) -> list[MongoCollectionInfo]:
+        return []
+
+    def list_schemas(self) -> list[str]:
+        return []
+
+    def get_synonyms(self) -> list[SynonymInfo]:
+        return []
+
+    def get_dependencies(self) -> list[DependencyEdge]:
         return []
 
     def limits(self) -> dict[str, Any]:

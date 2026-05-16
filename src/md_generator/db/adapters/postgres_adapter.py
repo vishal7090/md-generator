@@ -38,6 +38,20 @@ class PostgresAdapter(SqlAlchemyAdapter):
         with self._engine.connect() as conn:
             conn.execute(text("SELECT 1"))
 
+    def list_schemas(self) -> list[str]:
+        q = text(
+            """
+            SELECT schema_name FROM information_schema.schemata
+            WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+            ORDER BY schema_name
+            """
+        )
+        try:
+            with self._engine.connect() as conn:
+                return [str(r[0]) for r in conn.execute(q)]
+        except Exception:
+            return []
+
     def get_tables(self) -> list[TableInfo]:
         insp = self._inspector()
         names = insp.get_table_names(schema=self._schema)

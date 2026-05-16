@@ -43,6 +43,8 @@ class RunConfig:
     erd: ErdConfig = field(default_factory=ErdConfig)
     write_combined_feature_markdown: bool = False
     readme_feature_merge: str = "none"  # none | inline | toc
+    write_manifest: bool = True
+    markdown_cross_links: bool = True
 
     def with_output(self, path: Path) -> RunConfig:
         return replace(self, output_path=path)
@@ -98,6 +100,16 @@ def load_run_config(path: Path | None, overrides: dict[str, Any] | None = None) 
         if cur is None or str(cur).strip() == "" or str(cur).lower() == "public":
             db["schema"] = "main"
             raw["database"] = db
+    if db_type in ("mssql", "sqlserver", "microsoft_sql_server"):
+        cur = db.get("schema")
+        if cur is None or str(cur).strip() == "":
+            db["schema"] = "dbo"
+            raw["database"] = db
+    if db_type in ("access",):
+        cur = db.get("schema")
+        if cur is None or str(cur).strip() == "" or str(cur).lower() == "public":
+            db["schema"] = "main"
+            raw["database"] = db
     out = raw.get("output") or {}
     feats = raw.get("features") or {}
     exe = raw.get("execution") or {}
@@ -137,6 +149,8 @@ def load_run_config(path: Path | None, overrides: dict[str, Any] | None = None) 
         split_files=split_files,
         write_combined_feature_markdown=write_combined,
         readme_feature_merge=readme_merge,
+        write_manifest=bool(out.get("write_manifest", True)),
+        markdown_cross_links=bool(out.get("markdown_cross_links", True)),
         include=include_set,
         exclude=exclude_set,
         workers=int(exe.get("workers", 4)),
