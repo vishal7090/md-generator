@@ -27,7 +27,11 @@ def test_create_adapter_access_uri() -> None:
     from md_generator.db.adapters.access_odbc import access_sqlalchemy_uri
     from pathlib import Path
 
-    uri = access_sqlalchemy_uri(Path("C:/data/test.accdb"))
+    # Explicit driver avoids requiring ACE/ODBC on CI (Linux runners have no Access driver).
+    fake_driver = "Microsoft Access Driver (*.mdb, *.accdb)"
+    uri = access_sqlalchemy_uri(Path("C:/data/test.accdb"), driver=fake_driver)
+    assert "odbc_connect=" in uri
+    assert "test.accdb" in uri
     a = create_adapter("access", uri, schema="main", limits={})
     assert a.db_type == "access"
     a.close()
